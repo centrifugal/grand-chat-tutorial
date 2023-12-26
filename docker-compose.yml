@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=grandchat
+      - POSTGRES_PASSWORD=grandchat
+      - POSTGRES_DB=grandchat
+    expose:
+      - 5432
+    ports:
+      - 5432:5432
+    command: ["postgres", "-c", "wal_level=logical", "-c", "wal_writer_delay=10ms"]
+
+  backend:
+    build: ./backend
+    volumes:
+      - ./backend:/usr/src/app
+    expose:
+      - 8000
+    depends_on:
+      - db
+
+  frontend:
+    stdin_open: true
+    build: ./frontend
+    volumes:
+      - ./frontend:/usr/src/app
+      - /usr/src/app/node_modules
+    expose:
+      - 5173
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - backend
+
+  centrifugo:
+    image: centrifugo/centrifugo:v5.2.0
+    volumes:
+      - ./centrifugo/config.json:/centrifugo/config.json
+    command: centrifugo -c config.json
+    expose:
+      - 8000
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.3
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.3
+    depends_on:
+      - zookeeper
+    ports:
+      - "29092:29092"
+    expose:
+      - 9092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_MAX_REQUEST_SIZE: "10485760"
+      KAFKA_MESSAGE_MAX_BYTES: "10485760"
+      KAFKA_MAX_PARTITION_FETCH_BYTES: "10485760"
+
+  connect:
+    image: debezium/connect:2.5
+    depends_on:
+      - kafka
+      - db
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+
+  connect-config-loader:
+    image: appropriate/curl:latest
+    depends_on:
+      - connect
+    volumes:
+      - ./debezium/debezium-config.json:/debezium-config.json
+    command: >
+      /bin/sh -c "
+        echo 'Waiting for Kafka Connect to start...';
+        while ! curl -f http://connect:8083/connectors; do sleep 1; done;
+        echo 'Kafka Connect is up, posting configuration';
+        curl -X DELETE -H 'Content-Type: application/json' http://connect:8083/connectors/grandchat-chat-connector;
+        curl -X POST -H 'Content-Type: application/json' -v --data @/debezium-config.json http://connect:8083/connectors;
+        echo 'Configuration posted';
+      "
+
+  nginx:
+    image: nginx:1.25
+    volumes:
+      - ./nginx:/etc/nginx/
+    ports:
+      - 9000:80
+    depends_on:
+      - backend
+      - frontend
+      - centrifugo
+
+volumes:
+  postgres_data:

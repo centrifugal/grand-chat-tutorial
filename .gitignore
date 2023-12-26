@@ -1,0 +1,4 @@
+backend/env/
+backend/db.sqlite3
+frontend/node_modules
+postgres_data/

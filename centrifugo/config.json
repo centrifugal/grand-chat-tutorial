@@ -1,0 +1,37 @@
+{
+  "log_level": "debug",
+  "allowed_origins": ["http://localhost:9000"],
+  "token_hmac_secret_key": "secret",
+  "api_key": "api_key",
+  "namespaces": [
+    {
+      "name": "personal",
+      "history_size": 300,
+      "history_ttl": "600s",
+      "force_recovery": true
+    }
+  ],
+  "consumers": [
+    {
+      "name": "postgresql",
+      "type": "postgresql",
+      "postgresql": {
+        "dsn": "postgresql://grandchat:grandchat@db:5432/grandchat",
+        "outbox_table_name": "chat_outbox",
+        "num_partitions": 1,
+        "partition_select_limit": 100,
+        "partition_poll_interval": "300ms",
+        "partition_notification_channel": "centrifugo_partition_change"
+      }
+    },
+    {
+      "name": "kafka",
+      "type": "kafka",
+      "kafka": {
+        "brokers": ["kafka:9092"],
+        "topics": ["postgres.public.chat_cdc"],
+        "consumer_group": "centrifugo"
+      }
+    }
+  ]
+}
