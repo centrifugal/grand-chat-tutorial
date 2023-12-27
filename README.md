@@ -6,13 +6,13 @@ This is a source code for [Centrifugo Chat/Messenger Tutorial](https://centrifug
 
 ## Running locally
 
-All you need is Docker with Docker Compose. Run the app:
+You need Docker with Docker Compose. First, run the app:
 
 ```sh
 docker compose up --build
 ```
 
-After containers started, from another terminal window (you must be in the repo root) run database migrations:
+After containers started for the first time, from another terminal window (you must be in the repo root) run database migrations:
 
 ```sh
 docker compose exec backend python manage.py migrate
