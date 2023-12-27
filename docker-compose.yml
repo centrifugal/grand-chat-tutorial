@@ -5,6 +5,11 @@ services:
     image: postgres:15
     volumes:
       - ./postgres_data:/var/lib/postgresql/data/
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "grandchat" ]
+      interval: 1s
+      timeout: 5s
+      retries: 10
     environment:
       - POSTGRES_USER=grandchat
       - POSTGRES_PASSWORD=grandchat
@@ -22,7 +27,8 @@ services:
     expose:
       - 8000
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   frontend:
     stdin_open: true
@@ -44,6 +50,11 @@ services:
     command: centrifugo -c config.json
     expose:
       - 8000
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.3
@@ -59,6 +70,11 @@ services:
       - "29092:29092"
     expose:
       - 9092
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--list", "--bootstrap-server", "localhost:9092"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -75,8 +91,10 @@ services:
   connect:
     image: debezium/connect:2.5
     depends_on:
-      - kafka
-      - db
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     ports:
       - "8083:8083"
     environment:

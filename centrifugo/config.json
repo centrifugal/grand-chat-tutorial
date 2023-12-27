@@ -1,4 +1,5 @@
 {
+  "address": "0.0.0.0",
   "log_level": "debug",
   "allowed_origins": ["http://localhost:9000"],
   "token_hmac_secret_key": "secret",

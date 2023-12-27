@@ -46,7 +46,7 @@ SESSION_COOKIE_HTTPONLY = True
 CENTRIFUGO_TOKEN_SECRET = 'secret'
 # CENTRIFUGO_HTTP_API_ENDPOINT used to set Centrifugo HTTP base endpoint.
 # If you are using Centrifugo outside Docker - remember to change it.
-CENTRIFUGO_HTTP_API_ENDPOINT = "http://centrifugo:8000",
+CENTRIFUGO_HTTP_API_ENDPOINT = "http://centrifugo:8000"
 # CENTRIFUGO_HTTP_API_KEY is used for auth in Centrifugo server HTTP API.
 # SECURITY WARNING: make it strong, keep it in secret!
 CENTRIFUGO_HTTP_API_KEY = 'api_key'
