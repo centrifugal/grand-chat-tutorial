@@ -11,6 +11,9 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 from pathlib import Path
 import os
 
+# SECURITY WARNING: we enabled MD5PasswordHasher here for faster creation
+# of 100k users in app/utils.py. But don't use in production - remove this
+# PASSWORD_HASHERS option from settings to use Djnago's sane defaults.
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.PBKDF2PasswordHasher",
     "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
