@@ -13,7 +13,7 @@ import os
 
 # SECURITY WARNING: we enabled MD5PasswordHasher here for faster creation
 # of 100k users in app/utils.py. But don't use in production - remove this
-# PASSWORD_HASHERS option from settings to use Djnago's sane defaults.
+# PASSWORD_HASHERS option from settings to use Django's sane defaults.
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.PBKDF2PasswordHasher",
     "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
