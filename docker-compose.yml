@@ -22,6 +22,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     volumes:
       - ./backend:/usr/src/app
     expose:
@@ -45,6 +46,7 @@ services:
 
   centrifugo:
     image: centrifugo/centrifugo:v5.2.0
+    restart: unless-stopped
     volumes:
       - ./centrifugo/config.json:/centrifugo/config.json
     command: centrifugo -c config.json
@@ -122,6 +124,7 @@ services:
 
   nginx:
     image: nginx:1.25
+    restart: unless-stopped
     volumes:
       - ./nginx:/etc/nginx/
     ports:
