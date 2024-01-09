@@ -6,7 +6,7 @@ services:
     volumes:
       - ./postgres_data:/var/lib/postgresql/data/
     healthcheck:
-      test: [ "CMD", "pg_isready", "-U", "grandchat" ]
+      test: [ "CMD", "pg_isready", "-U", "grandchat", "-d", "grandchat" ]
       interval: 1s
       timeout: 5s
       retries: 10
