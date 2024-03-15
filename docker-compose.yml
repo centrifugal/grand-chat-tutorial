@@ -31,6 +31,15 @@ services:
       db:
         condition: service_healthy
 
+  migrations:
+    build: ./backend
+    restart: on-failure
+    command: >
+      python manage.py migrate
+    depends_on:
+      db:
+        condition: service_healthy
+
   frontend:
     stdin_open: true
     build: ./frontend
