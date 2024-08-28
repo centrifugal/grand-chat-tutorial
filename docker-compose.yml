@@ -1,10 +1,9 @@
-version: '3.8'
 
 services:
   db:
     image: postgres:15
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data/
+      - postgres_data:/var/lib/postgresql/data/
     healthcheck:
       test: [ "CMD", "pg_isready", "-U", "grandchat", "-d", "grandchat" ]
       interval: 1s
