@@ -53,7 +53,7 @@ services:
       - backend
 
   centrifugo:
-    image: centrifugo/centrifugo:v5.2.0
+    image: centrifugo/centrifugo:v5.4.9
     restart: unless-stopped
     volumes:
       - ./centrifugo/config.json:/centrifugo/config.json
@@ -142,5 +142,37 @@ services:
       - frontend
       - centrifugo
 
+  redis:
+    image: redis:${REDIS_VERSION:-7}-alpine
+    ports:
+      - "6379:6379"
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    depends_on:
+      - centrifugo
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    depends_on:
+      - prometheus
+    # Expose Grafana on host port 3000
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      # Mount local provisioning directory to automatically configure Prometheus as a datasource
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+
 volumes:
   postgres_data:
+  grafana-data:
