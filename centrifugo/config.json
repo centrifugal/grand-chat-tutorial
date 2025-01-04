@@ -1,20 +1,49 @@
 {
-  "engine": "redis",
-  "redis_address": "redis:6379",
-  "address": "0.0.0.0",
-  "log_level": "debug",
-  "allowed_origins": ["http://localhost:9000"],
-  "token_hmac_secret_key": "secret",
-  "api_key": "api_key",
-  "prometheus": true,
-  "namespaces": [
-    {
-      "name": "personal",
-      "history_size": 300,
-      "history_ttl": "600s",
-      "force_recovery": true
+  "engine": {
+    "redis": {
+      "address": "redis:6379"
+    },
+    "type": "redis"
+  },
+  "client": {
+    "token": {
+      "hmac_secret_key": "secret"
+    },
+    "allowed_origins": [
+      "http://localhost:9000"
+    ]
+  },
+  "prometheus": {
+    "enabled": true,
+    "instrument_http_handlers": true,
+    "channel_namespace_resolution": {
+      "enabled": true
     }
-  ],
+  },
+  "log_level": "debug",
+  "address": "0.0.0.0",
+  "http_api": {
+    "key": "api_key"
+  },
+  "channel": {
+    "proxy": {
+      "subscribe": {
+        "endpoint": "http://localhost:8000/centrifugo/subscribe"
+      }
+    },
+    "namespaces": [
+      {
+        "name": "personal",
+        "history_size": 300,
+        "history_ttl": "600s",
+        "force_recovery": true
+      },
+      {
+        "name": "proxied",
+        "subscribe_proxy_enabled": true
+      }
+    ]
+  },
   "consumers": [
     {
       "name": "postgresql",
@@ -26,16 +55,22 @@
         "partition_select_limit": 100,
         "partition_poll_interval": "300ms",
         "partition_notification_channel": "centrifugo_partition_change"
-      }
+      },
+      "enabled": true
     },
     {
       "name": "kafka",
       "type": "kafka",
       "kafka": {
-        "brokers": ["kafka:9092"],
-        "topics": ["postgres.public.chat_cdc"],
+        "brokers": [
+          "kafka:9092"
+        ],
+        "topics": [
+          "postgres.public.chat_cdc"
+        ],
         "consumer_group": "centrifugo"
-      }
+      },
+      "enabled": true
     }
   ]
 }

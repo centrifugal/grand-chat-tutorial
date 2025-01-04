@@ -53,17 +53,19 @@ services:
       - backend
 
   centrifugo:
-    image: centrifugo/centrifugo:v5.4.9
+    image: centrifugo_v6_dev
     restart: unless-stopped
     volumes:
       - ./centrifugo/config.json:/centrifugo/config.json
     command: centrifugo -c config.json
-    expose:
-      - 8000
+    ports:
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   zookeeper:
@@ -146,6 +148,11 @@ services:
     image: redis:${REDIS_VERSION:-7}-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
 
   prometheus:
     image: prom/prometheus:v3.0.1
