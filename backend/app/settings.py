@@ -75,6 +75,21 @@ CENTRIFUGO_BROADCAST_MODE = 'api_cdc'
 # partition number when saving outbox event must be in range [0, 1).
 CENTRIFUGO_OUTBOX_PARTITIONS = 1
 
+# Before you set PUSH_NOTIFICATIONS_ENABLED to True, you need:
+# - Update centrifugo/centrifugo image to centrifugo/centrifugo-pro image in docker-compose.yml
+# - Make sure you are using CENTRIFUGO_BROADCAST_MODE 'cdc' or 'api_cdc' since we only implemented pushes for these modes here.
+# - Put centrifugo/fcm.json file with your app FCM credentials (load it from Firebase console as described in tutorial)
+# - Update centrifugo/config.json and set "push_notifications.enabled" field to true
+# - Add backend/app/local_settings.py file with PUSH_NOTIFICATIONS_VAPID_PUBLIC_KEY and PUSH_NOTIFICATIONS_FIREBASE_CONFIG (tutorial describes how to get those).
+# - Add frontend/public/firebase-config.js file with Firebase config (same as PUSH_NOTIFICATIONS_FIREBASE_CONFIG: self.firebaseConfig = {...}, see tutorial).
+# - Restart app (docker compose up) and re-login (re-login required here to inherit updated user settings).
+PUSH_NOTIFICATIONS_ENABLED = False
+PUSH_NOTIFICATIONS_VAPID_PUBLIC_KEY = ''
+PUSH_NOTIFICATIONS_FIREBASE_CONFIG = {}
+
+if os.path.isfile(os.path.join(BASE_DIR, 'app', 'local_settings.py')):
+    from .local_settings import *
+
 INSTALLED_APPS = [
     'rest_framework',
     'chat',

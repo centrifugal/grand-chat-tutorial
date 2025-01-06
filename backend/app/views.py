@@ -1,6 +1,8 @@
 import json
 import jwt
 import time
+import requests
+import logging
 
 from django.contrib.auth import authenticate, login, logout
 from django.http import JsonResponse
@@ -58,7 +60,17 @@ def login_view(request):
         return JsonResponse({'detail': 'invalid credentials'}, status=400)
 
     login(request, user)
-    return JsonResponse({'user': {'id': user.pk, 'username': user.username}})
+    return JsonResponse({
+        'id': user.pk,
+        'username': user.username,
+        'settings': {
+            'push_notifications': {
+                'enabled': settings.PUSH_NOTIFICATIONS_ENABLED,
+                'vapid_public_key': settings.PUSH_NOTIFICATIONS_VAPID_PUBLIC_KEY,
+                'firebase_config': settings.PUSH_NOTIFICATIONS_FIREBASE_CONFIG,
+            }
+        }
+    })
 
 
 @require_POST
@@ -66,5 +78,64 @@ def logout_view(request):
     if not request.user.is_authenticated:
         return JsonResponse({'detail': 'must be authenticated'}, status=403)
 
+    device_ids = []
+    device_id = json.loads(request.body).get('device_id', '')
+    if device_id:
+        device_ids = [device_id]
+
+    session = requests.Session()
+    try:
+        resp = session.post(
+            settings.CENTRIFUGO_HTTP_API_ENDPOINT + '/api/device_remove',
+            data=json.dumps({
+                'users': [str(request.user.pk)],
+                'ids': device_ids
+            }),
+            headers={
+                'Content-type': 'application/json',
+                'X-API-Key': settings.CENTRIFUGO_HTTP_API_KEY,
+                'X-Centrifugo-Error-Mode': 'transport'
+            }
+        )
+    except requests.exceptions.RequestException as e:
+        logging.error(e)
+        return JsonResponse({'detail': 'failed to register device'}, status=500)
+
     logout(request)
     return JsonResponse({})
+
+
+@require_POST
+def device_register_view(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({'detail': 'must be authenticated'}, status=403)
+
+    device_info = json.loads(request.body).get('device')
+    if not device_info:
+        return JsonResponse({'detail': 'device not found'}, status=400)
+
+    # Attach user ID to device info.
+    device_info["user"] = str(request.user.pk)
+
+    session = requests.Session()
+    try:
+        resp = session.post(
+            settings.CENTRIFUGO_HTTP_API_ENDPOINT + '/api/device_register',
+            data=json.dumps(device_info),
+            headers={
+                'Content-type': 'application/json',
+                'X-API-Key': settings.CENTRIFUGO_HTTP_API_KEY,
+                'X-Centrifugo-Error-Mode': 'transport'
+            }
+        )
+    except requests.exceptions.RequestException as e:
+        logging.error(e)
+        return JsonResponse({'detail': 'failed to register device'}, status=500)
+
+    if resp.status_code != 200:
+        logging.error(resp.json())
+        return JsonResponse({'detail': 'failed to register device'}, status=500)
+
+    return JsonResponse({
+        'device_id': resp.json().get('result', {}).get('id')
+    })

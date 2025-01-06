@@ -19,8 +19,10 @@ export const login = async (csrfToken: string, username: string, password: strin
   return response.data
 }
 
-export const logout = async (csrfToken: string) => {
-  await axios.post(`${API_ENDPOINT_BASE}/api/logout/`, {}, {
+export const logout = async (csrfToken: string, deviceId: string) => {
+  await axios.post(`${API_ENDPOINT_BASE}/api/logout/`, {
+    'device_id': deviceId
+  }, {
     headers: {
       "X-CSRFToken": csrfToken
     }
@@ -89,6 +91,17 @@ export const joinRoom = async (csrfToken: string, roomId: string) => {
 
 export const leaveRoom = async (csrfToken: string, roomId: string) => {
   const response = await axios.post(`${API_ENDPOINT_BASE}/api/rooms/${roomId}/leave/`, {}, {
+    headers: {
+      'X-CSRFToken': csrfToken
+    }
+  });
+  return response.data
+}
+
+export const registerDevice = async (csrfToken: string, deviceInfo: any) => {
+  const response = await axios.post(`${API_ENDPOINT_BASE}/api/device/register/`, {
+    'device': deviceInfo
+  }, {
     headers: {
       'X-CSRFToken': csrfToken
     }

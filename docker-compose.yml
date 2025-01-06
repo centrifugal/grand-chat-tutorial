@@ -56,7 +56,7 @@ services:
     image: centrifugo_v6_dev
     restart: unless-stopped
     volumes:
-      - ./centrifugo/config.json:/centrifugo/config.json
+      - ./centrifugo:/centrifugo
     command: centrifugo -c config.json
     ports:
       - "8000:8000"

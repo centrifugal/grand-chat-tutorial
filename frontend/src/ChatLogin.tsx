@@ -17,7 +17,7 @@ const ChatLogin: React.FC<ChatLoginProps> = ({ onSuccess }) => {
     setLoading(true)
     try {
       const resp = await login(csrf, username, password)
-      onSuccess(resp.user);
+      onSuccess(resp);
     } catch (err) {
       console.error('Login failed:', err);
       // TODO: handle login errors.

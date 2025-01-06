@@ -27,6 +27,7 @@ urlpatterns = [
     path('api/token/subscription/', views.get_subscription_token, name='api-subscription-token'),
     path('api/login/', views.login_view, name='api-login'),
     path('api/logout/', views.logout_view, name='api-logout'),
+    path('api/device/register/', views.device_register_view, name='api-device-register'),
     path('api/', include('chat.urls')),
 ]
 

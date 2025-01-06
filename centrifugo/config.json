@@ -1,4 +1,9 @@
 {
+  "admin": {
+    "enabled": true,
+    "password": "password",
+    "secret": "secret"
+  },
   "engine": {
     "redis": {
       "address": "redis:6379"
@@ -72,5 +77,25 @@
       },
       "enabled": true
     }
-  ]
+  ],
+  "database": {
+    "enabled": true,
+    "postgresql": {
+      "dsn": "postgresql://grandchat:grandchat@db:5432/grandchat"
+    }
+  },
+  "push_notifications": {
+    "enabled": true,
+    "queue": {
+      "redis": {
+        "address": "redis:6379"
+      }
+    },
+    "enabled_providers": [
+      "fcm"
+    ],
+    "fcm": {
+      "credentials_file": "fcm.json"
+    }
+  }
 }
