@@ -8,7 +8,7 @@
     "redis": {
       "address": "redis:6379"
     },
-    "type": "redis"
+    "type": "memory"
   },
   "client": {
     "token": {
@@ -21,31 +21,24 @@
   "prometheus": {
     "enabled": true,
     "instrument_http_handlers": true,
-    "channel_namespace_resolution": {
-      "enabled": true
-    }
+    "channel_namespace_resolution": true
   },
-  "log_level": "debug",
-  "address": "0.0.0.0",
+  "log": {
+    "level": "debug"
+  },
+  "http_server": {
+    "address": "0.0.0.0"
+  },
   "http_api": {
     "key": "api_key"
   },
   "channel": {
-    "proxy": {
-      "subscribe": {
-        "endpoint": "http://localhost:8000/centrifugo/subscribe"
-      }
-    },
     "namespaces": [
       {
         "name": "personal",
         "history_size": 300,
         "history_ttl": "600s",
         "force_recovery": true
-      },
-      {
-        "name": "proxied",
-        "subscribe_proxy_enabled": true
       }
     ]
   },
@@ -79,13 +72,13 @@
     }
   ],
   "database": {
-    "enabled": true,
+    "enabled": false,
     "postgresql": {
       "dsn": "postgresql://grandchat:grandchat@db:5432/grandchat"
     }
   },
   "push_notifications": {
-    "enabled": true,
+    "enabled": false,
     "queue": {
       "redis": {
         "address": "redis:6379"

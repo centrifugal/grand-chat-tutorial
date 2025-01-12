@@ -53,7 +53,7 @@ services:
       - backend
 
   centrifugo:
-    image: centrifugo_v6_dev
+    image: centrifugo/centrifugo:v6
     restart: unless-stopped
     volumes:
       - ./centrifugo:/centrifugo
