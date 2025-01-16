@@ -1,17 +1,47 @@
 {
-  "address": "0.0.0.0",
-  "log_level": "debug",
-  "allowed_origins": ["http://localhost:9000"],
-  "token_hmac_secret_key": "secret",
-  "api_key": "api_key",
-  "namespaces": [
-    {
-      "name": "personal",
-      "history_size": 300,
-      "history_ttl": "600s",
-      "force_recovery": true
-    }
-  ],
+  "admin": {
+    "enabled": true,
+    "password": "password",
+    "secret": "secret"
+  },
+  "engine": {
+    "redis": {
+      "address": "redis:6379"
+    },
+    "type": "memory"
+  },
+  "client": {
+    "token": {
+      "hmac_secret_key": "secret"
+    },
+    "allowed_origins": [
+      "http://localhost:9000"
+    ]
+  },
+  "prometheus": {
+    "enabled": true,
+    "instrument_http_handlers": true,
+    "channel_namespace_resolution": true
+  },
+  "log": {
+    "level": "debug"
+  },
+  "http_server": {
+    "address": "0.0.0.0"
+  },
+  "http_api": {
+    "key": "api_key"
+  },
+  "channel": {
+    "namespaces": [
+      {
+        "name": "personal",
+        "history_size": 300,
+        "history_ttl": "600s",
+        "force_recovery": true
+      }
+    ]
+  },
   "consumers": [
     {
       "name": "postgresql",
@@ -23,16 +53,42 @@
         "partition_select_limit": 100,
         "partition_poll_interval": "300ms",
         "partition_notification_channel": "centrifugo_partition_change"
-      }
+      },
+      "enabled": true
     },
     {
       "name": "kafka",
       "type": "kafka",
       "kafka": {
-        "brokers": ["kafka:9092"],
-        "topics": ["postgres.public.chat_cdc"],
+        "brokers": [
+          "kafka:9092"
+        ],
+        "topics": [
+          "postgres.public.chat_cdc"
+        ],
         "consumer_group": "centrifugo"
-      }
+      },
+      "enabled": true
     }
-  ]
+  ],
+  "database": {
+    "enabled": false,
+    "postgresql": {
+      "dsn": "postgresql://grandchat:grandchat@db:5432/grandchat"
+    }
+  },
+  "push_notifications": {
+    "enabled": false,
+    "queue": {
+      "redis": {
+        "address": "redis:6379"
+      }
+    },
+    "enabled_providers": [
+      "fcm"
+    ],
+    "fcm": {
+      "credentials_file": "fcm.json"
+    }
+  }
 }

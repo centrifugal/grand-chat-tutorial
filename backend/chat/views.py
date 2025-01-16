@@ -63,7 +63,10 @@ class CentrifugoMixin:
         members = RoomMember.objects.filter(room_id=room_id).values_list('user', flat=True)
         return [f'personal:{user_id}' for user_id in members]
 
-    def broadcast_room(self, room_id, broadcast_payload):
+    def broadcast_room(self, room, broadcast_payload):
+        room_id = room.pk
+        room_name = room.name
+
         # Using Centrifugo HTTP API is the simplest way to send real-time message, and usually
         # it provides the best latency. The trade-off here is that error here may result in
         # lost real-time event. Depending on the application requirements this may be fine or not.  
@@ -124,6 +127,45 @@ class CentrifugoMixin:
         else:
             raise ValueError(f'unknown CENTRIFUGO_BROADCAST_MODE: {settings.CENTRIFUGO_BROADCAST_MODE}')
 
+        is_message_added = broadcast_payload.get('data', {}).get('type') == 'message_added'
+        if is_message_added && settings.PUSH_NOTIFICATIONS_ENABLED and 'cdc' in settings.CENTRIFUGO_BROADCAST_MODE:
+            partition = hash(room_id)
+            payload = {
+                "recipient": {
+                    "filter": {
+                        "topics": [f'chat:messages:{room_id}']
+                    }
+                },
+                "notification": {
+                    "fcm": {
+                        "message": {
+                            "notification": {
+                                "title": room_name,
+                                "body": broadcast_payload.get('data', {}).get('body', {}).get('content', '')
+                            },
+                            "webpush": {
+                              "fcm_options": {
+                                "link": f'http://localhost:9000/rooms/{room_id}'
+                              }
+                            }
+                        }
+                    }
+                }
+            }
+            CDC.objects.create(method='send_push_notification', payload=payload, partition=partition)
+
+    def update_user_room_topic(self, user_id, room_id, op):
+        if not settings.PUSH_NOTIFICATIONS_ENABLED:
+            return
+        if 'cdc' not in settings.CENTRIFUGO_BROADCAST_MODE:
+            return
+        partition = hash(room_id)
+        CDC.objects.create(method='user_topic_update', payload={
+            'user': str(user_id),
+            'topics': ['chat:messages:' + str(room_id)],
+            'op': op
+        }, partition=partition)
+
 
 class MessageListCreateAPIView(ListCreateAPIView, CentrifugoMixin):
     serializer_class = MessageSerializer
@@ -155,7 +197,7 @@ class MessageListCreateAPIView(ListCreateAPIView, CentrifugoMixin):
             },
             'idempotency_key': f'message_{serializer.data["id"]}'
         }
-        self.broadcast_room(room_id, broadcast_payload)
+        self.broadcast_room(room, broadcast_payload)
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -183,7 +225,8 @@ class JoinRoomView(APIView, CentrifugoMixin):
             },
             'idempotency_key': f'user_joined_{obj.pk}'
         }
-        self.broadcast_room(room_id, broadcast_payload)
+        self.broadcast_room(room, broadcast_payload)
+        self.update_user_room_topic(request.user.pk, room_id, 'add')
         return Response(body, status=status.HTTP_200_OK)
 
 
@@ -209,5 +252,6 @@ class LeaveRoomView(APIView, CentrifugoMixin):
             },
             'idempotency_key': f'user_left_{pk}'
         }
-        self.broadcast_room(room_id, broadcast_payload)
+        self.broadcast_room(room, broadcast_payload)
+        self.update_user_room_topic(request.user.pk, room_id, 'remove')
         return Response(body, status=status.HTTP_200_OK)

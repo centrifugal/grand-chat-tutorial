@@ -12,9 +12,10 @@ import ChatContext from './ChatContext';
 import ChatSearch from './ChatSearch';
 import {
   getConnectionToken, getSubscriptionToken, getCSRFToken,
-  logout, addMessage, getRooms, getMessages, getRoom,
+  logout, addMessage, getRooms, getMessages, getRoom, registerDevice,
 } from './AppApi';
-import { WS_ENDPOINT, LOCAL_STORAGE_AUTH_KEY } from './AppSettings';
+import { WS_ENDPOINT, LOCAL_STORAGE_AUTH_INFO_KEY, LOCAL_STORAGE_DEVICE_ID_KEY } from './AppSettings';
+import { initializeFirebase, requestNotificationToken, onForegroundNotification, removeNotificationToken } from './PushNotification';
 
 import {
   Centrifuge, PublicationContext, SubscriptionStateContext,
@@ -22,7 +23,7 @@ import {
 } from 'centrifuge';
 
 const initialChatState = {
-  rooms: [], // room IDs array for room sorting during rendering. 
+  rooms: [], // room IDs array for room sorting during rendering.
   roomsById: {},
   messagesByRoomId: {}
 };
@@ -169,16 +170,64 @@ function reducer(state: any, action: any) {
 
 const App: React.FC = () => {
   let localAuth: any = {};
-  if (localStorage.getItem(LOCAL_STORAGE_AUTH_KEY)) {
-    localAuth = JSON.parse(localStorage.getItem(LOCAL_STORAGE_AUTH_KEY)!)
+  if (localStorage.getItem(LOCAL_STORAGE_AUTH_INFO_KEY)) {
+    localAuth = JSON.parse(localStorage.getItem(LOCAL_STORAGE_AUTH_INFO_KEY)!)
   }
-  const [authenticated, setAuthenticated] = useState<boolean>(localAuth.id !== undefined)
-  const [userInfo, setUserInfo] = useState<any>(localAuth)
-  const [csrf, setCSRF] = useState('')
+  const [authenticated, setAuthenticated] = useState<boolean>(localAuth.id !== undefined);
+  const [userInfo, setUserInfo] = useState<any>(localAuth);
+  const [csrf, setCSRF] = useState('');
   const [unrecoverableError, setUnrecoverableError] = useState('')
   const [chatState, dispatch] = useReducer(reducer, initialChatState);
   const [realTimeStatus, setRealTimeStatus] = useState('🔴')
   const [messageQueue, setMessageQueue] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+    if (!csrf) { // Scenario when user is authenticated from local storage but CSRF token is not yet fetched.
+      return;
+    }
+    if (!userInfo.settings || !userInfo.settings.push_notifications || !userInfo.settings.push_notifications.enabled) {
+      return;
+    }
+    const setupNotifications = async () => {
+      initializeFirebase(userInfo.settings.push_notifications.firebase_config);
+      const token = await requestNotificationToken(userInfo.settings.push_notifications.firebase_config, userInfo.settings.push_notifications.vapid_public_key);
+
+      if (token) {
+        const deviceInfo = {
+          provider: 'fcm',
+          token: token,
+          platform: 'web',
+          meta: { 'user-agent': navigator.userAgent },
+          tags: {
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
+        };
+        if (localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY)) {
+          deviceInfo['device_id'] = localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY);
+        }
+        try {
+          const response = await registerDevice(csrf, deviceInfo);
+          console.log('Token sent to server:', response);
+
+          const deviceId = response.device_id;
+          localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, deviceId);
+          onForegroundNotification((payload) => {
+            console.log('Message received in foreground:', payload);
+            // We are ignoring foreground messages since we receive them over Centrifugo WebSocket.
+          });
+        } catch (error) {
+          console.error('Failed to send token to server:', error);
+        }
+      } else {
+        console.warn('No token received, cannot proceed.');
+      }
+    };
+
+    setupNotifications();
+  }, [authenticated, userInfo, csrf]);
 
   useEffect(() => {
     if (messageQueue.length === 0) {
@@ -451,33 +500,35 @@ const App: React.FC = () => {
   };
 
   const onLoginSuccess = async function (userInfo: any) {
-    setAuthenticated(true);
     setUserInfo(userInfo);
-    localStorage.setItem(LOCAL_STORAGE_AUTH_KEY, JSON.stringify(userInfo));
+    localStorage.setItem(LOCAL_STORAGE_AUTH_INFO_KEY, JSON.stringify(userInfo));
     const token = await getCSRFToken()
     setCSRF(token)
+    setAuthenticated(true);
   }
 
-  const onLoggedOut = () => {
+  const onLoggedOut = async () => {
     setAuthenticated(false)
     setUnrecoverableError('')
     setUserInfo({});
     dispatch({
       type: "CLEAR_CHAT_STATE", payload: {}
     })
-    localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_AUTH_INFO_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_DEVICE_ID_KEY);
+    await removeNotificationToken();
   }
 
   const onLogout = async function () {
     try {
-      await logout(csrf)
-      onLoggedOut()
+      await logout(csrf, localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY) || '')
+      await onLoggedOut()
       const token = await getCSRFToken()
       setCSRF(token)
     } catch (err) {
       if (axios.isAxiosError(err) && err.response) {
         if (err.response.status == 403) {
-          onLoggedOut()
+          await onLoggedOut()
           return
         }
       }
