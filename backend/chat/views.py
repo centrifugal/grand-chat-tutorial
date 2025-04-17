@@ -128,7 +128,7 @@ class CentrifugoMixin:
             raise ValueError(f'unknown CENTRIFUGO_BROADCAST_MODE: {settings.CENTRIFUGO_BROADCAST_MODE}')
 
         is_message_added = broadcast_payload.get('data', {}).get('type') == 'message_added'
-        if is_message_added && settings.PUSH_NOTIFICATIONS_ENABLED and 'cdc' in settings.CENTRIFUGO_BROADCAST_MODE:
+        if is_message_added and settings.PUSH_NOTIFICATIONS_ENABLED and 'cdc' in settings.CENTRIFUGO_BROADCAST_MODE:
             partition = hash(room_id)
             payload = {
                 "recipient": {
