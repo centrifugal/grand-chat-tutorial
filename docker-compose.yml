@@ -1,6 +1,20 @@
+# Usage:
+#   COMPOSE_EXPERIMENTAL_GIT_REMOTE=true docker compose up -d --remove-orphans
+#   COMPOSE_EXPERIMENTAL_GIT_REMOTE=true docker compose down
+
+# Note:
+# include is available in Docker Compose version 2.20 and later, and Docker Desktop version 4.22 and later.
+# docs: https://docs.docker.com/compose/multiple-compose-files/include/#include-and-overrides
+include:
+# enable metric and log collection
+- path: https://github.com/qclaogui/codelab-monitoring.git#main:docker-compose/monolithic-mode/logs/compose.yaml
 
 services:
   db:
+    # https://github.com/qclaogui/codelab-monitoring/blob/main/alloy-modules/compose/README.md`
+    labels:
+      metrics.grafana.com/scrape: false
+      logs.grafana.com/scrape: false
     image: postgres:15
     volumes:
       - postgres_data:/var/lib/postgresql/data/
@@ -20,6 +34,8 @@ services:
     command: ["postgres", "-c", "wal_level=logical", "-c", "wal_writer_delay=10ms"]
 
   backend:
+    labels:
+      metrics.grafana.com/scrape: false
     build: ./backend
     restart: unless-stopped
     volumes:
@@ -31,6 +47,9 @@ services:
         condition: service_healthy
 
   migrations:
+    labels:
+      metrics.grafana.com/scrape: false
+      logs.grafana.com/scrape: false
     build: ./backend
     restart: on-failure
     command: >
@@ -40,6 +59,8 @@ services:
         condition: service_healthy
 
   frontend:
+    labels:
+      metrics.grafana.com/scrape: false
     stdin_open: true
     build: ./frontend
     volumes:
@@ -69,12 +90,18 @@ services:
         condition: service_healthy
 
   zookeeper:
+    labels:
+      metrics.grafana.com/scrape: false
+      logs.grafana.com/scrape: false
     image: confluentinc/cp-zookeeper:7.4.3
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
 
   kafka:
+    labels:
+      metrics.grafana.com/scrape: false
+      logs.grafana.com/scrape: false
     image: confluentinc/cp-kafka:7.4.3
     depends_on:
       - zookeeper
@@ -101,6 +128,9 @@ services:
       KAFKA_MAX_PARTITION_FETCH_BYTES: "10485760"
 
   connect:
+    labels:
+      metrics.grafana.com/scrape: false
+      logs.grafana.com/scrape: false
     image: debezium/connect:2.5
     depends_on:
       db:
@@ -117,6 +147,9 @@ services:
       STATUS_STORAGE_TOPIC: connect_statuses
 
   connect-config-loader:
+    labels:
+      metrics.grafana.com/scrape: false
+      logs.grafana.com/scrape: false
     image: appropriate/curl:latest
     depends_on:
       - connect
@@ -133,6 +166,9 @@ services:
       "
 
   nginx:
+    labels:
+      metrics.grafana.com/scrape: false
+      logs.grafana.com/scrape: false
     image: nginx:1.25
     restart: unless-stopped
     volumes:
@@ -145,6 +181,9 @@ services:
       - centrifugo
 
   redis:
+    labels:
+      metrics.grafana.com/scrape: false
+      logs.grafana.com/scrape: false
     image: redis:${REDIS_VERSION:-7}-alpine
     ports:
       - "6379:6379"
@@ -154,32 +193,5 @@ services:
       timeout: 5s
       retries: 10
 
-  prometheus:
-    image: prom/prometheus:v3.0.1
-    depends_on:
-      - centrifugo
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-    ports:
-      - "9090:9090"
-
-  grafana:
-    image: grafana/grafana-oss:11.4.0
-    depends_on:
-      - prometheus
-    # Expose Grafana on host port 3000
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      # Mount local provisioning directory to automatically configure Prometheus as a datasource
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - grafana-data:/var/lib/grafana
-
 volumes:
   postgres_data:
-  grafana-data:

@@ -1,7 +1,0 @@
-global:
-  scrape_interval: 5s
-
-scrape_configs:
-  - job_name: 'centrifugo'
-    static_configs:
-      - targets: ['centrifugo:8000']
