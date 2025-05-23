@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"os"
 
@@ -9,6 +10,10 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+
+	handlers "github.com/gambitier/grand-chat-tutorial/gobackend/internal/handlers"
+	repository "github.com/gambitier/grand-chat-tutorial/gobackend/internal/repository"
 )
 
 func main() {
@@ -16,6 +21,18 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("failed to connect to db: %v", err)
+	}
+	defer db.Close()
+
+	queries := repository.New(db)
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
@@ -36,8 +53,7 @@ func main() {
 
 	// Auth routes
 	auth := api.Group("/auth")
-	auth.Post("/register", handleRegister)
-	auth.Post("/login", handleLogin)
+	handlers.RegisterAuthRoutes(auth, queries)
 
 	// Chat routes
 	chat := api.Group("/chat")
