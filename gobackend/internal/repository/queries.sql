@@ -71,3 +71,7 @@ FROM cdc
 WHERE partition = $1
 ORDER BY created_at ASC
 LIMIT $2;
+-- name: ListRooms :many
+SELECT *
+FROM rooms
+ORDER BY created_at DESC;

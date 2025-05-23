@@ -72,6 +72,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.incrementRoomVersionStmt, err = db.PrepareContext(ctx, incrementRoomVersion); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementRoomVersion: %w", err)
 	}
+	if q.listRoomsStmt, err = db.PrepareContext(ctx, listRooms); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRooms: %w", err)
+	}
 	return &q, nil
 }
 
@@ -157,6 +160,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing incrementRoomVersionStmt: %w", cerr)
 		}
 	}
+	if q.listRoomsStmt != nil {
+		if cerr := q.listRoomsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRoomsStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -212,6 +220,7 @@ type Queries struct {
 	getUserByIDStmt          *sql.Stmt
 	getUserByUsernameStmt    *sql.Stmt
 	incrementRoomVersionStmt *sql.Stmt
+	listRoomsStmt            *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -234,5 +243,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getUserByIDStmt:          q.getUserByIDStmt,
 		getUserByUsernameStmt:    q.getUserByUsernameStmt,
 		incrementRoomVersionStmt: q.incrementRoomVersionStmt,
+		listRoomsStmt:            q.listRoomsStmt,
 	}
 }

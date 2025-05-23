@@ -25,6 +25,7 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id int32) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
 	IncrementRoomVersion(ctx context.Context, id int32) (Room, error)
+	ListRooms(ctx context.Context) ([]Room, error)
 }
 
 var _ Querier = (*Queries)(nil)

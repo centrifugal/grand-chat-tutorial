@@ -437,3 +437,39 @@ func (q *Queries) IncrementRoomVersion(ctx context.Context, id int32) (Room, err
 	)
 	return i, err
 }
+
+const listRooms = `-- name: ListRooms :many
+SELECT id, name, version, created_at, bumped_at, last_message_id
+FROM rooms
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListRooms(ctx context.Context) ([]Room, error) {
+	rows, err := q.query(ctx, q.listRoomsStmt, listRooms)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Room{}
+	for rows.Next() {
+		var i Room
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Version,
+			&i.CreatedAt,
+			&i.BumpedAt,
+			&i.LastMessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
