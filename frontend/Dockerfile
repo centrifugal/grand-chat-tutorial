@@ -1,15 +1,12 @@
-FROM node:18-slim
+FROM node:24-slim
 
 WORKDIR /usr/src/app
 
-ENV PATH /usr/src/app/node_modules/.bin:$PATH
+ENV PATH=/usr/src/app/node_modules/.bin:$PATH
 
 # install and cache app dependencies
 COPY package.json .
 COPY package-lock.json .
-
-RUN npm install
-
 RUN npm ci
 
 # start app

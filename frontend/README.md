@@ -1,27 +1,40 @@
-# React + TypeScript + Vite
+# GrandChat frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React + TypeScript single-page app for [GrandChat](../README.md), built with
+[Vite](https://vitejs.dev/). It talks to the Django backend over a REST API and to Centrifugo
+over a WebSocket using the [`centrifuge`](https://github.com/centrifugal/centrifuge-js) SDK.
 
-Currently, two official plugins are available:
+Normally you run the whole stack from the repo root with `docker compose up` — the frontend is
+served by its container with hot reload. This README is for working on the frontend on its own.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Requirements
 
-## Expanding the ESLint configuration
+* Node.js >= 20 (required by Vite 8)
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+## Local development
 
-- Configure the top-level `parserOptions` property like this:
-
-```js
-   parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-    project: ['./tsconfig.json', './tsconfig.node.json'],
-    tsconfigRootDir: __dirname,
-   },
+```sh
+npm install
+npm run dev
 ```
 
-- Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
-- Optionally add `plugin:@typescript-eslint/stylistic-type-checked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and add `plugin:react/recommended` & `plugin:react/jsx-runtime` to the `extends` list
+This starts the Vite dev server on http://localhost:5173. Note that the app expects the rest
+of the stack (backend, Centrifugo, Nginx) to be reachable on the same origin via Nginx
+(http://localhost:9000), so for a full experience run everything through Docker Compose.
+
+## Scripts
+
+* `npm run dev` — start the dev server with hot reload.
+* `npm run build` — type-check (`tsc -b`) and build a production bundle into `dist/`.
+* `npm run lint` — run ESLint.
+* `npm run preview` — preview the production build locally.
+
+## Project structure
+
+* `src/types.ts` — shared TypeScript interfaces that mirror the backend API and the real-time
+  event payloads. Everything else builds on these.
+* `src/App.tsx` — top-level layout, routing, the chat-state reducer, the Centrifugo connection
+  and the real-time event handling.
+* `src/AppApi.tsx` — all REST API calls (via `axios`).
+* `src/Chat*.tsx` — the screens: login, room list, room detail, room search, layout.
+* `src/PushNotification.tsx` — optional web push (FCM) helpers.

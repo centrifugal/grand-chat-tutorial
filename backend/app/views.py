@@ -10,6 +10,20 @@ from django.middleware.csrf import get_token
 from django.views.decorators.http import require_POST
 from django.conf import settings
 
+logger = logging.getLogger(__name__)
+
+
+def centrifugo_api_request(method, payload):
+    """Send a command to the Centrifugo HTTP API and return the response."""
+    return requests.post(
+        f'{settings.CENTRIFUGO_HTTP_API_ENDPOINT}/api/{method}',
+        json=payload,
+        headers={
+            'X-API-Key': settings.CENTRIFUGO_HTTP_API_KEY,
+            'X-Centrifugo-Error-Mode': 'transport',
+        },
+    )
+
 
 def get_csrf(request):
     return JsonResponse({}, headers={'X-CSRFToken': get_token(request)})
@@ -78,28 +92,19 @@ def logout_view(request):
     if not request.user.is_authenticated:
         return JsonResponse({'detail': 'must be authenticated'}, status=403)
 
-    device_ids = []
-    device_id = json.loads(request.body).get('device_id', '')
-    if device_id:
-        device_ids = [device_id]
-
-    session = requests.Session()
-    try:
-        resp = session.post(
-            settings.CENTRIFUGO_HTTP_API_ENDPOINT + '/api/device_remove',
-            data=json.dumps({
+    # When push notifications are enabled, unregister the user's device from Centrifugo so
+    # they stop receiving pushes after logout. With push off there are no devices to remove.
+    if settings.PUSH_NOTIFICATIONS_ENABLED:
+        device_id = json.loads(request.body).get('device_id', '')
+        device_ids = [device_id] if device_id else []
+        try:
+            centrifugo_api_request('device_remove', {
                 'users': [str(request.user.pk)],
-                'ids': device_ids
-            }),
-            headers={
-                'Content-type': 'application/json',
-                'X-API-Key': settings.CENTRIFUGO_HTTP_API_KEY,
-                'X-Centrifugo-Error-Mode': 'transport'
-            }
-        )
-    except requests.exceptions.RequestException as e:
-        logging.error(e)
-        return JsonResponse({'detail': 'failed to register device'}, status=500)
+                'ids': device_ids,
+            })
+        except requests.exceptions.RequestException as e:
+            logger.error(e)
+            return JsonResponse({'detail': 'failed to remove device'}, status=500)
 
     logout(request)
     return JsonResponse({})
@@ -114,26 +119,21 @@ def device_register_view(request):
     if not device_info:
         return JsonResponse({'detail': 'device not found'}, status=400)
 
-    # Attach user ID to device info.
-    device_info["user"] = str(request.user.pk)
+    # Attach the current user, and map the frontend's "device_id" to Centrifugo's "id" field
+    # so re-registration updates the existing device in place (instead of creating a new one
+    # and orphaning the old token).
+    device_info['user'] = str(request.user.pk)
+    if device_info.get('device_id'):
+        device_info['id'] = device_info.pop('device_id')
 
-    session = requests.Session()
     try:
-        resp = session.post(
-            settings.CENTRIFUGO_HTTP_API_ENDPOINT + '/api/device_register',
-            data=json.dumps(device_info),
-            headers={
-                'Content-type': 'application/json',
-                'X-API-Key': settings.CENTRIFUGO_HTTP_API_KEY,
-                'X-Centrifugo-Error-Mode': 'transport'
-            }
-        )
+        resp = centrifugo_api_request('device_register', device_info)
     except requests.exceptions.RequestException as e:
-        logging.error(e)
+        logger.error(e)
         return JsonResponse({'detail': 'failed to register device'}, status=500)
 
     if resp.status_code != 200:
-        logging.error(resp.json())
+        logger.error(resp.json())
         return JsonResponse({'detail': 'failed to register device'}, status=500)
 
     return JsonResponse({

@@ -61,6 +61,29 @@ def fill_room(room_id, limit):
         print("Total members created:", total)
 
 
+def setup_quickstart():
+    """Create a tiny demo dataset so you can start chatting immediately.
+
+    It creates two users you can actually log in as – alice and bob, both with
+    password "password" – and a few rooms that both users are members of. This
+    is the fastest way to try the app locally. For large-scale load testing use
+    setup_dev() below instead.
+    """
+    users = []
+    for username in ['alice', 'bob']:
+        user, _ = User.objects.get_or_create(username=username)
+        user.set_password('password')
+        user.save()
+        users.append(user)
+
+    for name in ['General', 'Random', 'Centrifugo']:
+        room, _ = Room.objects.get_or_create(name=name)
+        for user in users:
+            RoomMember.objects.get_or_create(room=room, user=user)
+
+    print("Created users 'alice' and 'bob' (password: 'password') and 3 rooms.")
+
+
 def setup_dev():
     create_users(100_000)
     r1 = create_room('Centrifugo')

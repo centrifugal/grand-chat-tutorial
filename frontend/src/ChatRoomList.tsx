@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { Link } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import ChatContext from './ChatContext'
 
 const ChatRoomList = () => {
@@ -7,14 +7,17 @@ const ChatRoomList = () => {
 
   return (
     <div id="chat-rooms">
-      {state.rooms.map((roomId: number) => {
+      {state.rooms.map((roomId) => {
         const room = state.roomsById[roomId]
+        if (!room) {
+          return null
+        }
         return <div className="chat-room-block" key={room.id}>
-          <Link to={`/rooms/${room.id}`}>
+          <NavLink to={`/rooms/${room.id}`} className={({ isActive }) => isActive ? 'active-room' : ''}>
             <div className="left-column">
               <span className="name">{room.name}</span>
               <span className="message-content">
-                {room.last_message? (
+                {room.last_message ? (
                   <span>
                     <span className='message-content-author'>{room.last_message.user.username}:</span>
                     &nbsp;
@@ -26,7 +29,7 @@ const ChatRoomList = () => {
             <div className="right-column">
               <span className="chat-room-member-counter">{room.member_count}&nbsp;<span className="chat-room-member-counter-icon">🐈</span></span>
             </div>
-          </Link>
+          </NavLink>
         </div>
       })}
     </div>

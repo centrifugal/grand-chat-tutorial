@@ -14,7 +14,7 @@ class Room(models.Model):
 
     def increment_version(self):
         self.version += 1
-        self.save()
+        self.save(update_fields=['version'])
         return self.version
 
     def __str__(self):
@@ -41,6 +41,9 @@ class Message(models.Model):
     user = models.ForeignKey(User, related_name='messages', on_delete=models.CASCADE, null=True)
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.content[:50]
 
 
 class Outbox(models.Model):

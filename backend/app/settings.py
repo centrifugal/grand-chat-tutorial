@@ -44,35 +44,57 @@ SESSION_COOKIE_SAMESITE = 'Strict'
 CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_HTTPONLY = True
 
-# CENTRIFUGO_TOKEN_SECRET is used to create connection and subscription JWT.
+# === Centrifugo integration settings ===
+# These options are introduced step by step in the tutorial. Their values must match the
+# Centrifugo configuration in centrifugo/config.json – if you change one side, change the
+# other too.
+
+# CENTRIFUGO_TOKEN_SECRET is used to create connection and subscription JWTs (see the
+# "Integrating Centrifugo" chapter). It MUST match "client.token.hmac_secret_key" in
+# centrifugo/config.json.
 # SECURITY WARNING: make it strong, keep it in secret, never send to the frontend!
 CENTRIFUGO_TOKEN_SECRET = 'secret'
-# CENTRIFUGO_HTTP_API_ENDPOINT used to set Centrifugo HTTP base endpoint.
-# If you are using Centrifugo outside Docker - remember to change it.
+
+# CENTRIFUGO_HTTP_API_ENDPOINT is the base URL of the Centrifugo HTTP API, used by the
+# backend to broadcast messages (and to manage devices for push notifications). Here
+# "centrifugo" is the docker compose service name – change it if you run Centrifugo
+# outside of this compose setup.
 CENTRIFUGO_HTTP_API_ENDPOINT = "http://centrifugo:8000"
-# CENTRIFUGO_HTTP_API_KEY is used for auth in Centrifugo server HTTP API.
+
+# CENTRIFUGO_HTTP_API_KEY authenticates the backend's requests to the Centrifugo HTTP API.
+# It MUST match "http_api.key" in centrifugo/config.json.
 # SECURITY WARNING: make it strong, keep it in secret!
 CENTRIFUGO_HTTP_API_KEY = 'api_key'
-# CENTRIFUGO_BROADCAST_MODE sets the mode how to broadcast messages to Centrifugo
-# in this example app.
-# 
-# Possible options:
+
+# CENTRIFUGO_BROADCAST_MODE selects how the backend delivers events to Centrifugo. Each
+# mode is explained in the tutorial, and which Centrifugo consumer must be enabled in
+# centrifugo/config.json depends on the mode:
 #
-# 1. "api" - broadcast over Centrifugo HTTP API
-# 2. "outbox" – use transactional outbox pattern 
-# 3. "cdc" – use CDC approach where Debezium reads WAL and publishes messages to Kafka.
-# 4. "api_cdc" - combined mode where we send message over API but also over CDC. Since
-#                we use idempotency keys here – Centrifugo drops duplicate messages. This
-#                allows achieving the best latency and still reliable publications. It's
-#                also totally possible to combine api with outbox (and, for example, do
-#                not use LISTEN/NOTIFY trigger), but we skipped such combination here.
+#   "api"     – publish directly over the Centrifugo HTTP API. Lowest latency, but if the
+#               API call fails the event is lost. Needs NO consumer in config.json.
+#               Introduced in the "Integrating Centrifugo" chapter.
+#   "outbox"  – write to a transactional outbox table that Centrifugo polls. Reliable.
+#               Needs the "postgresql" consumer in config.json (its "num_partitions" must
+#               equal CENTRIFUGO_OUTBOX_PARTITIONS below). See "Broadcast: outbox and CDC".
+#   "cdc"     – Debezium reads the PostgreSQL WAL and streams changes through Kafka to
+#               Centrifugo. Reliable, with minimal database overhead. Needs the "kafka"
+#               consumer in config.json, the Kafka/Debezium services, and wal_level=logical
+#               on PostgreSQL (already set in docker-compose.yml). See "Broadcast: outbox and CDC".
+#   "api_cdc" – combine "api" (for latency) and "cdc" (for reliability); duplicate events
+#               are dropped by Centrifugo via idempotency keys. This is the recommended
+#               approach and the default here. Needs the "kafka" consumer (same as "cdc").
+#               Introduced in the "Solving CDC latency" section.
 #
-# REMEMBER to also update Centrifugo consumer configuration when switching the mode.
+# The shipped centrifugo/config.json enables BOTH the "postgresql" and "kafka" consumers,
+# so you can switch between these modes without editing it. Pure "api" mode needs no
+# consumer at all – with the "kafka" consumer still enabled Centrifugo just logs harmless
+# "topic not found" lines until the first CDC event is produced.
 CENTRIFUGO_BROADCAST_MODE = 'api_cdc'
-# CENTRIFUGO_OUTBOX_PARTITIONS is the number of partitions in "outbox" broadcast mode case,
-# must match Centrifigo PostgreSQL consumer configuration.
-# Partitions start from 0, so if CENTRIFUGO_OUTBOX_PARTITIONS is 1, then the actual
-# partition number when saving outbox event must be in range [0, 1).
+
+# CENTRIFUGO_OUTBOX_PARTITIONS is used only in "outbox" mode. It MUST match "num_partitions"
+# of the "postgresql" consumer in centrifugo/config.json. We pick a partition with
+# hash(room_id) % CENTRIFUGO_OUTBOX_PARTITIONS, so with the value 1 every event goes to
+# partition 0 (Centrifugo reads partitions in the range [0, CENTRIFUGO_OUTBOX_PARTITIONS)).
 CENTRIFUGO_OUTBOX_PARTITIONS = 1
 
 # Before you set PUSH_NOTIFICATIONS_ENABLED to True, you need:
