@@ -296,18 +296,21 @@ body {
 
 #chat-navbar #logout-container {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 #status {
   cursor: default;
 }
 
-#status.status-🟢 {
+#status.status-connected {
   cursor: default;
   text-shadow: 0 0 5px #0f0;
 }
 
-#status.status-🔴 {
+#status.status-disconnected {
   cursor: default;
   text-shadow: 0 0 5px #f81616;
 }
@@ -470,6 +473,76 @@ body {
   background-color: var(--primary-color);
 }
 
+/* Highlight the currently open room in the list (used by the two-column layout). */
+.chat-room-block a.active-room {
+  background-color: var(--primary-color-dark);
+}
+
+/* Two-column (messenger-style) layout: room list on the left, open room on the right. */
+#layout-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--primary-color);
+  font-size: var(--font-size-medium);
+  font-family: inherit;
+  padding: 10px;
+  border-radius: 5px;
+  transition: color 0.2s ease;
+  vertical-align: middle;
+}
+
+#layout-toggle:hover {
+  color: var(--primary-color-light);
+}
+
+#layout-toggle.active {
+  color: var(--primary-color-light);
+  background-color: var(--primary-color-dark);
+}
+
+#chat-columns {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+#chat-sidebar {
+  width: 340px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px dashed var(--secondary-color-light);
+}
+
+/* Make room blocks a bit more compact when shown in the narrow sidebar. */
+#chat-sidebar .chat-room-block a {
+  font-size: var(--font-size-medium);
+}
+
+#chat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#chat-room-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color-muted);
+  font-size: var(--font-size-medium);
+}
+
+@media only screen and (max-width: 600px) {
+  /* On small screens fall back to a single column even if split view is on. */
+  #chat-sidebar {
+    width: 140px;
+  }
+}
+
 #chat-login {
   display: flex;
   flex-direction: column;
@@ -491,6 +564,15 @@ body {
 #chat-login .login-button-container {
   width: 100%;
   max-width: 400px;
+}
+
+#chat-login .login-error {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 20px;
+  color: #ff6b6b;
+  text-align: center;
+  font-size: 0.9rem;
 }
 
 #chat-login .input-container input {

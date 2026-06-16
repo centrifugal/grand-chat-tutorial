@@ -1,16 +1,19 @@
-import { useState, useEffect, useContext, useRef, UIEvent } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
+import type { UIEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import AuthContext from './AuthContext';
 import ChatContext from './ChatContext';
+import type { Message, Room } from './types';
 
 interface ChatRoomDetailProps {
-  fetchRoom: (roomId: string) => Promise<void>
-  fetchMessages: (roomId: string) => Promise<any[]>
-  publishMessage: (roomId: string, content: string) => Promise<boolean>
+  fetchRoom: (roomId: string) => Promise<Room | null>
+  fetchMessages: (roomId: string) => Promise<Message[] | null>
+  publishMessage: (roomId: string, content: string) => Promise<Message | null>
 }
 
 const ChatRoomDetail: React.FC<ChatRoomDetailProps> = ({ fetchRoom, fetchMessages, publishMessage }) => {
   const { id } = useParams() as { id: string };
+  const roomId = Number(id);
   const userInfo = useContext(AuthContext);
   const { state, dispatch } = useContext(ChatContext);
   const [content, setContent] = useState('')
@@ -18,12 +21,14 @@ const ChatRoomDetail: React.FC<ChatRoomDetailProps> = ({ fetchRoom, fetchMessage
   const [roomLoading, setRoomLoading] = useState(false)
   const [sendLoading, setSendLoading] = useState(false)
   const [notFound, setNotFound] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null); // Ref for the messages container.
 
   useEffect(() => {
     if (messagesLoading) return
     const init = async () => {
       setMessagesLoading(true)
-      if (!state.messagesByRoomId[id]) {
+      if (!state.messagesByRoomId[roomId]) {
         const messages = await fetchMessages(id)
         if (messages === null) {
           setNotFound(true);
@@ -31,7 +36,7 @@ const ChatRoomDetail: React.FC<ChatRoomDetailProps> = ({ fetchRoom, fetchMessage
           setNotFound(false);
           dispatch({
             type: "ADD_MESSAGES", payload: {
-              roomId: id,
+              roomId: roomId,
               messages: messages
             }
           })
@@ -40,13 +45,13 @@ const ChatRoomDetail: React.FC<ChatRoomDetailProps> = ({ fetchRoom, fetchMessage
       setMessagesLoading(false)
     }
     init()
-  }, [id, state.messagesByRoomId, fetchMessages]);
+  }, [id, roomId, state.messagesByRoomId, fetchMessages]);
 
   useEffect(() => {
     if (roomLoading) return
     const init = async () => {
       setRoomLoading(true)
-      if (!state.roomsById[id]) {
+      if (!state.roomsById[roomId]) {
         const room = await fetchRoom(id)
         if (room === null) {
           setNotFound(true);
@@ -62,21 +67,15 @@ const ChatRoomDetail: React.FC<ChatRoomDetailProps> = ({ fetchRoom, fetchMessage
       setRoomLoading(false)
     }
     init()
-  }, [id, state.roomsById, fetchRoom]);
+  }, [id, roomId, state.roomsById, fetchRoom]);
 
-  const room = state.roomsById[id] || {};
-  const messages = state.messagesByRoomId[id] || [];
-
-  const messagesEndRef = useRef<any>(null); // Ref for the messages container
+  const room = state.roomsById[roomId];
+  const messages = state.messagesByRoomId[roomId] || [];
 
   const scrollToBottom = () => {
     const container = messagesEndRef.current;
     if (container) {
-      const scrollOptions = {
-        top: container.scrollHeight,
-        behavior: 'auto'
-      };
-      container.scrollTo(scrollOptions);
+      container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
     }
   };
 
@@ -95,14 +94,16 @@ const ChatRoomDetail: React.FC<ChatRoomDetailProps> = ({ fetchRoom, fetchMessage
     }
     setSendLoading(true)
     try {
-      const message = await publishMessage(id!, content)
-      dispatch({
-        type: "ADD_MESSAGES", payload: {
-          roomId: id,
-          messages: [message]
-        }
-      })
-      setContent('')
+      const message = await publishMessage(id, content)
+      if (message) {
+        dispatch({
+          type: "ADD_MESSAGES", payload: {
+            roomId: roomId,
+            messages: [message]
+          }
+        })
+        setContent('')
+      }
     } catch (e) {
       console.log(e)
     }
@@ -110,22 +111,21 @@ const ChatRoomDetail: React.FC<ChatRoomDetailProps> = ({ fetchRoom, fetchMessage
   }
 
   const handleScroll = (e: UIEvent<HTMLDivElement>) => {
-    const container = (e.target as HTMLElement);
+    const container = e.target as HTMLElement;
     if (!container) return;
-    const threshold = 40; // Pixels from the bottom to be considered 'near bottom'
+    const threshold = 40; // Pixels from the bottom to be considered 'near bottom'.
     const position = container.scrollTop + container.offsetHeight;
     const height = container.scrollHeight;
     setIsAtBottom(position + threshold >= height)
   };
 
-  const [isAtBottom, setIsAtBottom] = useState(true);
-
-  // Scroll to bottom after layout changes.
+  // Scroll to bottom after layout changes – but only if the user is already near
+  // the bottom, so we don't yank them down while they're reading older messages.
   useEffect(() => {
     if (isAtBottom) {
       scrollToBottom();
     }
-  }, [messages, isAtBottom]); // Dependency on messages ensures it runs after messages are updated.
+  }, [messages, isAtBottom]);
 
   return (
     <div id="chat-room">
@@ -136,15 +136,14 @@ const ChatRoomDetail: React.FC<ChatRoomDetailProps> = ({ fetchRoom, fetchMessage
       ) : (
         <>
           <div id="room-description">
-            <span id="room-name">{room.name}</span>
-            <span id="room-member-count">{room.member_count} <span className='chat-room-member-counter-icon'>🐈</span></span>
+            <span id="room-name">{room?.name}</span>
+            <span id="room-member-count">{room?.member_count} <span className='chat-room-member-counter-icon'>🐈</span></span>
           </div>
           <div id="room-messages" onScroll={handleScroll} ref={messagesEndRef}>
-            {messages.map((message: any) => (
+            {messages.map((message) => (
               <div key={message.id} className={`room-message ${(userInfo.id == message.user.id) ? 'room-message-mine' : 'room-message-not-mine'}`}>
                 <div className='message-avatar'>
                   <img src={`https://robohash.org/user${message.user.id}.png?set=set4`} alt="" />
-                  {/* <img src={`https://ui-avatars.com/api/?background=random&color=fff&name=${message.user.username}&size=128`} alt="" /> */}
                 </div>
                 <div className='message-bubble'>
                   <div className='message-meta'>

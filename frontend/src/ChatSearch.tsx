@@ -2,59 +2,44 @@ import { useState, useEffect, useContext } from 'react';
 import CsrfContext from './CsrfContext';
 import ChatContext from './ChatContext';
 import { joinRoom, leaveRoom, searchRooms } from './AppApi';
+import type { Room, RoomSearchResult } from './types';
 
 interface ChatSearchProps {
-  fetchRoom: (roomId: string) => Promise<void>
+  fetchRoom: (roomId: string) => Promise<Room | null>
 }
 
 const ChatSearch: React.FC<ChatSearchProps> = ({ fetchRoom }) => {
   const csrf = useContext(CsrfContext);
   const { state, dispatch } = useContext(ChatContext);
-  const [rooms, setRooms] = useState<any>([]);
-  const [loading, setLoading] = useState<any>({})
+  const [rooms, setRooms] = useState<RoomSearchResult[]>([]);
+  const [loading, setLoading] = useState<Record<number, boolean>>({})
 
-  const setLoadingFlag = (roomId: any, value: boolean) => {
-    setLoading((prev: any) => ({
+  const setLoadingFlag = (roomId: number, value: boolean) => {
+    setLoading((prev) => ({
       ...prev,
       [roomId]: value
     }));
   };
 
-  const onJoin = async (roomId: any) => {
+  const onJoin = async (roomId: number) => {
     setLoadingFlag(roomId, true)
     try {
-      await joinRoom(csrf, roomId)
-      const room = await fetchRoom(roomId)
-      dispatch({
-        type: "ADD_ROOMS", payload: {
-          rooms: [room]
-        }
-      })
-      setRooms(rooms.map((room: any) => 
-        room.id === roomId
-          ? { ...room, is_member: true }
-          : room
-      ))
+      await joinRoom(csrf, String(roomId))
+      const room = await fetchRoom(String(roomId))
+      if (room) {
+        dispatch({ type: "ADD_ROOMS", payload: { rooms: [room] } })
+      }
     } catch (e) {
       console.log(e)
     }
     setLoadingFlag(roomId, false)
   };
 
-  const onLeave = async (roomId: any) => {
+  const onLeave = async (roomId: number) => {
     setLoadingFlag(roomId, true)
     try {
-      await leaveRoom(csrf, roomId)
-      dispatch({
-        type: "DELETE_ROOM", payload: {
-          roomId: roomId
-        }
-      })
-      setRooms(rooms.map((room: any) => 
-        room.id === roomId
-          ? { ...room, is_member: false }
-          : room
-      ))
+      await leaveRoom(csrf, String(roomId))
+      dispatch({ type: "DELETE_ROOM", payload: { roomId: roomId } })
     } catch (e) {
       console.log(e)
     }
@@ -71,7 +56,10 @@ const ChatSearch: React.FC<ChatSearchProps> = ({ fetchRoom }) => {
 
   return (
     <div id="chat-rooms">
-      {rooms.map((room: any) => {
+      {rooms.map((room) => {
+        // roomsById tells us the live membership state: a Room object means the
+        // user is a member, an explicit null means they have left, and undefined
+        // means we have no real-time info yet – so fall back to the search result.
         const roomState = state.roomsById[room.id]
         let isMember: boolean;
         if (roomState === null) {

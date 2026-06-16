@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useReducer } from 'react';
+import React, { useState, useEffect, useReducer, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import axios from 'axios';
 
@@ -14,21 +14,18 @@ import {
   getConnectionToken, getSubscriptionToken, getCSRFToken,
   logout, addMessage, getRooms, getMessages, getRoom, registerDevice,
 } from './AppApi';
-import { WS_ENDPOINT, LOCAL_STORAGE_AUTH_INFO_KEY, LOCAL_STORAGE_DEVICE_ID_KEY } from './AppSettings';
+import { WS_ENDPOINT, LOCAL_STORAGE_AUTH_INFO_KEY, LOCAL_STORAGE_DEVICE_ID_KEY, LOCAL_STORAGE_TWO_COLUMN_KEY } from './AppSettings';
 import { initializeFirebase, requestNotificationToken, onForegroundNotification, removeNotificationToken } from './PushNotification';
+import { initialChatState } from './types';
+import type {
+  AuthInfo, ChatAction, ChatState, DeviceInfo, Message, RealTimeEvent,
+  Room, RoomMembership,
+} from './types';
 
-import {
-  Centrifuge, PublicationContext, SubscriptionStateContext,
-  SubscribedContext, SubscriptionState
-} from 'centrifuge';
+import { Centrifuge, SubscriptionState } from 'centrifuge';
+import type { PublicationContext, SubscriptionStateContext, SubscribedContext } from 'centrifuge';
 
-const initialChatState = {
-  rooms: [], // room IDs array for room sorting during rendering.
-  roomsById: {},
-  messagesByRoomId: {}
-};
-
-function reducer(state: any, action: any) {
+function reducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'CLEAR_CHAT_STATE': {
       return initialChatState;
@@ -38,22 +35,17 @@ function reducer(state: any, action: any) {
 
       // Update roomsById with new rooms, avoiding duplicates.
       const updatedRoomsById = { ...state.roomsById };
-      newRooms.forEach((room: any) => {
+      newRooms.forEach((room) => {
         if (!updatedRoomsById[room.id]) {
           updatedRoomsById[room.id] = room;
         }
       });
 
       // Merge new room IDs with existing ones, filtering out duplicates.
-      const mergedRoomIds = [...new Set([...newRooms.map((room: any) => room.id), ...state.rooms])];
+      const mergedRoomIds = [...new Set([...newRooms.map((room) => room.id), ...state.rooms])];
 
-      // Sort mergedRoomIds based on bumped_at field in updatedRoomsById.
-      const sortedRoomIds = mergedRoomIds.sort((a, b) => {
-        const roomA = updatedRoomsById[a];
-        const roomB = updatedRoomsById[b];
-        // Compare RFC 3339 date strings is possible without transforming to Date.
-        return roomB.bumped_at.localeCompare(roomA.bumped_at);
-      });
+      // Sort room IDs by the bumped_at field of their rooms, newest first.
+      const sortedRoomIds = sortRoomIds(mergedRoomIds, updatedRoomsById);
 
       return {
         ...state,
@@ -64,17 +56,19 @@ function reducer(state: any, action: any) {
     case 'DELETE_ROOM': {
       const roomId = action.payload.roomId;
 
-      // Set the specified room to null instead of deleting it.
+      // Set the specified room to null instead of deleting it. This lets the
+      // search screen keep its membership badge in sync.
       const newRoomsById = {
         ...state.roomsById,
-        [roomId]: null // On delete we set roomId to null. This allows to sync membership state of rooms on ChatSearch screen.
+        [roomId]: null
       };
 
       // Remove the room from the rooms array.
-      const newRooms = state.rooms.filter((id: any) => id !== roomId);
+      const newRooms = state.rooms.filter((id) => id !== roomId);
 
       // Remove associated messages.
-      const { [roomId]: deletedMessages, ...newMessagesByRoomId } = state.messagesByRoomId;
+      const newMessagesByRoomId = { ...state.messagesByRoomId };
+      delete newMessagesByRoomId[roomId];
 
       return {
         ...state,
@@ -86,7 +80,7 @@ function reducer(state: any, action: any) {
     case 'ADD_MESSAGES': {
       const roomId = action.payload.roomId;
       const newMessages = action.payload.messages;
-      let currentMessages = state.messagesByRoomId[roomId] || [];
+      const currentMessages = state.messagesByRoomId[roomId] || [];
 
       // Combine current and new messages, then filter out duplicates.
       const combinedMessages = [...currentMessages, ...newMessages].filter(
@@ -98,29 +92,23 @@ function reducer(state: any, action: any) {
       combinedMessages.sort((a, b) => a.id - b.id);
 
       // Find the message with the highest ID.
-      const maxMessageId = combinedMessages.length > 0 ? combinedMessages[combinedMessages.length - 1].id : null;
+      const lastMessage = combinedMessages.length > 0 ? combinedMessages[combinedMessages.length - 1] : null;
 
       let needSort = false;
 
-      // Update the roomsById object with the new last_message if necessary.
+      // Update the room's last_message and bumped_at if we got a newer message.
       const updatedRoomsById = { ...state.roomsById };
-      if (maxMessageId !== null && updatedRoomsById[roomId] && (!updatedRoomsById[roomId].last_message || maxMessageId > updatedRoomsById[roomId].last_message.id)) {
-        const newLastMessage = combinedMessages.find(message => message.id === maxMessageId);
-        updatedRoomsById[roomId].last_message = newLastMessage;
-        updatedRoomsById[roomId].bumped_at = newLastMessage.room.bumped_at;
+      const room = updatedRoomsById[roomId];
+      if (lastMessage && room && (!room.last_message || lastMessage.id > room.last_message.id)) {
+        updatedRoomsById[roomId] = {
+          ...room,
+          last_message: lastMessage,
+          bumped_at: lastMessage.room.bumped_at,
+        };
         needSort = true;
       }
 
-      let updatedRooms = [...state.rooms];
-      if (needSort) {
-        // Sort mergedRoomIds based on bumped_at field in updatedRoomsById.
-        updatedRooms = updatedRooms.sort((a: any, b: any) => {
-          const roomA = updatedRoomsById[a];
-          const roomB = updatedRoomsById[b];
-          // Compare RFC 3339 date strings directly
-          return roomB.bumped_at.localeCompare(roomA.bumped_at);
-        });
-      }
+      const updatedRooms = needSort ? sortRoomIds(state.rooms, updatedRoomsById) : state.rooms;
 
       return {
         ...state,
@@ -135,31 +123,23 @@ function reducer(state: any, action: any) {
     case 'SET_ROOM_MEMBER_COUNT': {
       const { roomId, version, memberCount } = action.payload;
 
-      // Check if the roomId exists in roomsById.
-      if (!state.roomsById[roomId]) {
+      const room = state.roomsById[roomId];
+      if (!room) {
         console.error(`Room with ID ${roomId} not found.`);
         return state;
       }
 
-      // Check if the version in the event is greater than the version in the room object.
-      if (version <= state.roomsById[roomId].version) {
+      // Ignore events older than the state we already have.
+      if (version <= room.version) {
         console.error(`Outdated version for room ID ${roomId}.`);
         return state;
       }
 
-      // Update the member_count and version of the specified room.
-      const updatedRoom = {
-        ...state.roomsById[roomId],
-        member_count: memberCount,
-        version: version,
-      };
-
-      // Return the new state with the updated roomsById.
       return {
         ...state,
         roomsById: {
           ...state.roomsById,
-          [roomId]: updatedRoom,
+          [roomId]: { ...room, member_count: memberCount, version: version },
         },
       };
     }
@@ -168,257 +148,215 @@ function reducer(state: any, action: any) {
   }
 }
 
+// Sort room IDs by their room's bumped_at field, newest first. RFC 3339 date
+// strings are directly comparable, so we can compare them without parsing.
+function sortRoomIds(roomIds: number[], roomsById: Record<number, Room | null>): number[] {
+  return [...roomIds].sort((a, b) => {
+    const roomA = roomsById[a];
+    const roomB = roomsById[b];
+    if (!roomA || !roomB) return 0;
+    return roomB.bumped_at.localeCompare(roomA.bumped_at);
+  });
+}
+
 const App: React.FC = () => {
-  let localAuth: any = {};
+  let localAuth: AuthInfo = {};
   if (localStorage.getItem(LOCAL_STORAGE_AUTH_INFO_KEY)) {
     localAuth = JSON.parse(localStorage.getItem(LOCAL_STORAGE_AUTH_INFO_KEY)!)
   }
   const [authenticated, setAuthenticated] = useState<boolean>(localAuth.id !== undefined);
-  const [userInfo, setUserInfo] = useState<any>(localAuth);
+  const [userInfo, setUserInfo] = useState<AuthInfo>(localAuth);
   const [csrf, setCSRF] = useState('');
   const [unrecoverableError, setUnrecoverableError] = useState('')
   const [chatState, dispatch] = useReducer(reducer, initialChatState);
-  const [realTimeStatus, setRealTimeStatus] = useState('🔴')
-  const [messageQueue, setMessageQueue] = useState<any[]>([]);
+  const [connected, setConnected] = useState(false)
+  // Whether to show the messenger-style two-column layout (room list + open room side by
+  // side). Persisted so the choice sticks across reloads.
+  const [twoColumn, setTwoColumn] = useState<boolean>(localStorage.getItem(LOCAL_STORAGE_TWO_COLUMN_KEY) === 'true')
+
+  const toggleColumns = () => {
+    setTwoColumn(prev => {
+      const next = !prev
+      localStorage.setItem(LOCAL_STORAGE_TWO_COLUMN_KEY, String(next))
+      return next
+    })
+  }
+
+  // The Centrifugo subscription is created once (when we connect) and lives for the whole
+  // session, so its publication callback would close over a stale chatState. We keep the
+  // latest state in a ref and read chatStateRef.current inside the handlers below.
+  const chatStateRef = useRef(chatState);
+  useEffect(() => {
+    chatStateRef.current = chatState;
+  }, [chatState]);
 
   useEffect(() => {
     if (!authenticated) {
       return;
     }
-    if (!csrf) { // Scenario when user is authenticated from local storage but CSRF token is not yet fetched.
+    if (!csrf) { // User is authenticated from local storage but CSRF token is not yet fetched.
       return;
     }
-    if (!userInfo.settings || !userInfo.settings.push_notifications || !userInfo.settings.push_notifications.enabled) {
+    const push = userInfo.settings?.push_notifications;
+    if (!push || !push.enabled) {
       return;
     }
     const setupNotifications = async () => {
-      initializeFirebase(userInfo.settings.push_notifications.firebase_config);
-      const token = await requestNotificationToken(userInfo.settings.push_notifications.firebase_config, userInfo.settings.push_notifications.vapid_public_key);
+      initializeFirebase(push.firebase_config);
+      const token = await requestNotificationToken(push.vapid_public_key);
 
-      if (token) {
-        const deviceInfo = {
-          provider: 'fcm',
-          token: token,
-          platform: 'web',
-          meta: { 'user-agent': navigator.userAgent },
-          tags: {
-            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          },
-        };
-        if (localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY)) {
-          deviceInfo['device_id'] = localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY);
-        }
-        try {
-          const response = await registerDevice(csrf, deviceInfo);
-          console.log('Token sent to server:', response);
-
-          const deviceId = response.device_id;
-          localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, deviceId);
-          onForegroundNotification((payload) => {
-            console.log('Message received in foreground:', payload);
-            // We are ignoring foreground messages since we receive them over Centrifugo WebSocket.
-          });
-        } catch (error) {
-          console.error('Failed to send token to server:', error);
-        }
-      } else {
+      if (!token) {
         console.warn('No token received, cannot proceed.');
+        return;
+      }
+
+      const deviceInfo: DeviceInfo = {
+        provider: 'fcm',
+        token: token,
+        platform: 'web',
+        meta: { 'user-agent': navigator.userAgent },
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+      const storedDeviceId = localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY);
+      if (storedDeviceId) {
+        deviceInfo.device_id = storedDeviceId;
+      }
+      try {
+        const response = await registerDevice(csrf, deviceInfo);
+        localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, response.device_id);
+        onForegroundNotification((payload) => {
+          console.log('Message received in foreground:', payload);
+          // We ignore foreground messages since we receive them over the Centrifugo WebSocket.
+        });
+      } catch (error) {
+        console.error('Failed to send token to server:', error);
       }
     };
 
     setupNotifications();
   }, [authenticated, userInfo, csrf]);
 
-  useEffect(() => {
-    if (messageQueue.length === 0) {
-      return; // Return if no messages to process.
+  const processMessageAdded = async (body: Message) => {
+    const roomId = body.room.id
+    if (!chatStateRef.current.roomsById[roomId]) {
+      const room = await fetchRoom(String(roomId))
+      if (room) {
+        dispatch({ type: "ADD_ROOMS", payload: { rooms: [room] } })
+      }
     }
+    if (!chatStateRef.current.messagesByRoomId[roomId]) {
+      // First time we see this room – load its history (which already includes this message).
+      const messages = await fetchMessages(String(roomId))
+      if (messages) {
+        dispatch({ type: "ADD_MESSAGES", payload: { roomId: roomId, messages: messages } })
+      }
+      return
+    }
+    dispatch({ type: "ADD_MESSAGES", payload: { roomId: roomId, messages: [body] } })
+  }
 
-    const processUserJoined = async (body: any) => {
-      const roomId = body.room.id
-      const roomVersion = body.room.version
-      let room = chatState.roomsById[roomId]
-      if (!room) {
-        room = await fetchRoom(roomId)
-        if (room === null) {
-          return
+  const processUserJoined = async (body: RoomMembership) => {
+    const roomId = body.room.id
+    if (!chatStateRef.current.roomsById[roomId]) {
+      const room = await fetchRoom(String(roomId))
+      if (room) {
+        dispatch({ type: "ADD_ROOMS", payload: { rooms: [room] } })
+      }
+    } else {
+      dispatch({
+        type: "SET_ROOM_MEMBER_COUNT", payload: {
+          roomId: roomId,
+          version: body.room.version,
+          memberCount: body.room.member_count
         }
-        dispatch({
-          type: "ADD_ROOMS", payload: {
-            rooms: [room]
-          }
-        })
+      })
+    }
+  }
+
+  const processUserLeft = async (body: RoomMembership) => {
+    const roomId = body.room.id
+    const room = chatStateRef.current.roomsById[roomId]
+    if (room) {
+      if (body.room.version <= room.version) {
+        return // Outdated event – we already have a newer version of this room.
+      }
+      if (userInfo.id === body.user.id) {
+        dispatch({ type: "DELETE_ROOM", payload: { roomId: roomId } })
       } else {
         dispatch({
           type: "SET_ROOM_MEMBER_COUNT", payload: {
             roomId: roomId,
-            version: roomVersion,
+            version: body.room.version,
             memberCount: body.room.member_count
           }
         })
       }
-    }
-
-    const processUserLeft = async (body: any) => {
-      const roomId = body.room.id
-      const roomVersion = body.room.version
-      const leftUserId = body.user.id
-      let room = chatState.roomsById[roomId]
+    } else if (userInfo.id !== body.user.id) {
+      const room = await fetchRoom(String(roomId))
       if (room) {
-        if (room.version >= roomVersion) {
-          console.error(`Outdated version for room ID ${roomId}.`);
-          return
-        }
-        if (userInfo.id == leftUserId) {
-          dispatch({
-            type: "DELETE_ROOM", payload: {
-              roomId: roomId
-            }
-          })
-        } else {
-          dispatch({
-            type: "SET_ROOM_MEMBER_COUNT", payload: {
-              roomId: roomId,
-              version: roomVersion,
-              memberCount: body.room.member_count
-            }
-          })
-        }
-      } else if (userInfo.id != leftUserId) {
-        room = await fetchRoom(roomId)
-        dispatch({
-          type: "ADD_ROOMS", payload: {
-            rooms: [room]
-          }
-        })
+        dispatch({ type: "ADD_ROOMS", payload: { rooms: [room] } })
       }
     }
+  }
 
-    const processMessageAdded = async (body: any) => {
-      const roomId = body.room.id
-      const newMessage = body
-
-      let room = chatState.roomsById[roomId]
-      if (!room) {
-        room = await fetchRoom(roomId)
-        dispatch({
-          type: "ADD_ROOMS", payload: {
-            rooms: [room]
-          }
-        })
-      }
-
-      let messages = chatState.messagesByRoomId[roomId]
-      if (!messages) {
-        const messages = await fetchMessages(roomId)
-        dispatch({
-          type: "ADD_MESSAGES", payload: {
-            roomId: roomId,
-            messages: messages
-          }
-        })
-        return;
-      }
-
-      dispatch({
-        type: "ADD_MESSAGES", payload: {
-          roomId: roomId,
-          messages: [newMessage]
-        }
-      })
+  // Centrifugo delivers every event for the current user on their personal channel. We handle
+  // events as they arrive – no queue needed: reducer updates are idempotent and every event
+  // carries a room version, so duplicate or out-of-order events are handled safely.
+  const onPublication = (event: RealTimeEvent) => {
+    switch (event.type) {
+      case 'message_added':
+        processMessageAdded(event.body)
+        break
+      case 'user_joined':
+        processUserJoined(event.body)
+        break
+      case 'user_left':
+        processUserLeft(event.body)
+        break
     }
-
-    const processMessage = async () => {
-      const message = messageQueue[0];
-
-      const { type, body } = message
-      switch (type) {
-        case 'message_added': {
-          await processMessageAdded(body);
-          break
-        }
-        case 'user_joined': {
-          await processUserJoined(body);
-          break
-        }
-        case 'user_left': {
-          await processUserLeft(body);
-          break
-        }
-        default:
-          console.log('unsupported message type', type, body)
-      }
-
-      // Remove the processed message from the queue
-      setMessageQueue(prevQueue => prevQueue.slice(1));
-    };
-
-    processMessage();
-  }, [messageQueue, chatState]);
-
-  const onPublication = (publication: any) => {
-    console.log(publication)
-    setMessageQueue(prevQueue => [...prevQueue, publication]);
-  };
+  }
 
   useEffect(() => {
     if (!userInfo.id) {
       return;
     }
 
-    let centrifuge: Centrifuge | null = null;
-
-    const init = async () => {
-      const rooms = await fetchRooms();
-      dispatch({
-        type: 'ADD_ROOMS', payload: {
-          'rooms': rooms
-        }
-      })
-
-      const personalChannel = 'personal:' + userInfo.id
-
-      const getPersonalChannelSubscriptionToken = async () => {
-        return getSubscriptionToken(personalChannel)
+    // Load the initial room list. Real-time events that arrive before this completes are
+    // still handled correctly – the handlers fetch a room on demand if we don't have it yet.
+    fetchRooms().then(rooms => {
+      if (rooms) {
+        dispatch({ type: 'ADD_ROOMS', payload: { rooms } })
       }
+    })
 
-      console.log("new Centrifuge")
-      centrifuge = new Centrifuge(WS_ENDPOINT, {
-        getToken: getConnectionToken,
-        debug: true
-      })
+    const personalChannel = 'personal:' + userInfo.id
 
-      const sub = centrifuge.newSubscription(personalChannel, {
-        getToken: getPersonalChannelSubscriptionToken
-      })
-      sub.on('publication', (ctx: PublicationContext) => {
-        onPublication(ctx.data)
-      }).on('subscribed', (ctx: SubscribedContext) => {
-        if (ctx.wasRecovering && !ctx.recovered) {
-          setUnrecoverableError('State LOST - please reload the page')
-        }
-      })
+    // Create the client synchronously (not inside an async function) so the cleanup below
+    // always has it to disconnect – even if this effect is torn down before async work runs.
+    const centrifuge = new Centrifuge(WS_ENDPOINT, {
+      getToken: getConnectionToken,
+      debug: true
+    })
 
-      sub.on('state', (ctx: SubscriptionStateContext) => {
-        if (ctx.newState == SubscriptionState.Subscribed) {
-          setRealTimeStatus('🟢')
-        } else {
-          setRealTimeStatus('🔴')
-        }
-      })
+    const sub = centrifuge.newSubscription(personalChannel, {
+      getToken: () => getSubscriptionToken(personalChannel)
+    })
+    sub.on('publication', (ctx: PublicationContext) => {
+      onPublication(ctx.data)
+    }).on('subscribed', (ctx: SubscribedContext) => {
+      if (ctx.wasRecovering && !ctx.recovered) {
+        setUnrecoverableError('State LOST - please reload the page')
+      }
+    })
+    sub.on('state', (ctx: SubscriptionStateContext) => {
+      setConnected(ctx.newState === SubscriptionState.Subscribed)
+    })
 
-      sub.subscribe()
-      centrifuge.connect()
-    }
-
-    // As soon as we get authenticated user – init our app.
-    init()
+    sub.subscribe()
+    centrifuge.connect()
 
     return () => {
-      if (centrifuge) {
-        console.log("disconnect Centrifuge")
-        centrifuge.disconnect()
-      }
+      centrifuge.disconnect()
     }
   }, [userInfo])
 
@@ -430,76 +368,58 @@ const App: React.FC = () => {
     fetchCSRF();
   }, []);
 
-  const publishMessage = async (roomId: string, content: string) => {
-    try {
-      const message = await addMessage(csrf, roomId, content)
-      return message
-    } catch (err) {
-      if (axios.isAxiosError(err) && err.response && err.response.status == 403) {
+  // All our API wrappers handle errors the same way: a 403 means the session is gone (log
+  // out), a 404 means the resource isn't available to us (just return null), anything else
+  // is unexpected. The caller always gets null on error.
+  const handleApiError = (err: unknown): null => {
+    if (axios.isAxiosError(err) && err.response) {
+      if (err.response.status === 403) {
         onLoggedOut()
-        return {}
+        return null
       }
-      setUnrecoverableError('Unhandled error - please reload a page')
-      return {};
+      if (err.response.status === 404) {
+        return null
+      }
+    }
+    setUnrecoverableError('Unhandled error - please reload a page')
+    return null
+  }
+
+  const publishMessage = async (roomId: string, content: string): Promise<Message | null> => {
+    try {
+      return await addMessage(csrf, roomId, content)
+    } catch (err) {
+      return handleApiError(err)
     }
   }
 
-  const fetchMessages = async (roomId: string): Promise<any> => {
+  const fetchMessages = async (roomId: string): Promise<Message[] | null> => {
     try {
       const messages = await getMessages(roomId)
-      // Note, need to reverse since we display old on top, newer on the bottom.
+      // Reverse since the API returns newest first, but we display oldest on top.
       return messages.reverse()
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response) {
-        if (err.response.status == 403) {
-          onLoggedOut()
-          return null;
-        } else if (err.response.status == 404) {
-          return null;
-        }
-      }
-      setUnrecoverableError('Unhandled error - please reload a page')
-      return null;
+      return handleApiError(err)
     }
   };
 
-  const fetchRoom = async (roomId: string): Promise<any> => {
+  const fetchRoom = async (roomId: string): Promise<Room | null> => {
     try {
-      const room = await getRoom(roomId)
-      return room
+      return await getRoom(roomId)
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response) {
-        if (err.response.status == 403) {
-          onLoggedOut()
-          return null;
-        } else if (err.response.status == 404) {
-          return null;
-        }
-      }
-      setUnrecoverableError('Unhandled error - please reload a page')
-      return null;
+      return handleApiError(err)
     }
   };
 
-  const fetchRooms = async (): Promise<any> => {
+  const fetchRooms = async (): Promise<Room[] | null> => {
     try {
-      const rooms = await getRooms()
-      return rooms
+      return await getRooms()
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response) {
-        if (err.response.status == 403) {
-          onLoggedOut()
-          return null;
-        } else if (err.response.status == 404) {
-          return null;
-        }
-      }
-      setUnrecoverableError('Unhandled error - please reload a page')
-      return null;
+      return handleApiError(err)
     }
   };
 
-  const onLoginSuccess = async function (userInfo: any) {
+  const onLoginSuccess = async (userInfo: AuthInfo) => {
     setUserInfo(userInfo);
     localStorage.setItem(LOCAL_STORAGE_AUTH_INFO_KEY, JSON.stringify(userInfo));
     const token = await getCSRFToken()
@@ -511,15 +431,13 @@ const App: React.FC = () => {
     setAuthenticated(false)
     setUnrecoverableError('')
     setUserInfo({});
-    dispatch({
-      type: "CLEAR_CHAT_STATE", payload: {}
-    })
+    dispatch({ type: "CLEAR_CHAT_STATE" })
     localStorage.removeItem(LOCAL_STORAGE_AUTH_INFO_KEY);
     localStorage.removeItem(LOCAL_STORAGE_DEVICE_ID_KEY);
     await removeNotificationToken();
   }
 
-  const onLogout = async function () {
+  const onLogout = async () => {
     try {
       await logout(csrf, localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY) || '')
       await onLoggedOut()
@@ -536,6 +454,22 @@ const App: React.FC = () => {
     }
   }
 
+  // The routed screens. In two-column mode the room list is rendered in the sidebar, so the
+  // "/" route just shows a placeholder prompting the user to pick a room.
+  const screens = (
+    <Routes>
+      <Route path="/" element={twoColumn ? <div id="chat-room-placeholder">Select a room to start chatting</div> : <ChatRoomList />} />
+      <Route path="/search" element={<ChatSearch fetchRoom={fetchRoom} />} />
+      <Route path="/rooms/:id" element={
+        <ChatRoomDetail
+          fetchRoom={fetchRoom}
+          fetchMessages={fetchMessages}
+          publishMessage={publishMessage}
+        />
+      } />
+    </Routes>
+  )
+
   return (
     <CsrfContext.Provider value={csrf}>
       <AuthContext.Provider value={userInfo}>
@@ -543,21 +477,28 @@ const App: React.FC = () => {
           <ChatContext.Provider value={{ state: chatState, dispatch }}>
             <Router>
               <ChatLayout
-                realTimeStatus={realTimeStatus}
+                connected={connected}
                 unrecoverableError={unrecoverableError}
                 onLogout={onLogout}
+                twoColumn={twoColumn}
+                onToggleColumns={toggleColumns}
               >
-                <Routes>
-                  <Route path="/" element={<ChatRoomList />} />
-                  <Route path="/search" element={<ChatSearch fetchRoom={fetchRoom} />} />
-                  <Route path="/rooms/:id" element={
-                    <ChatRoomDetail
-                      fetchRoom={fetchRoom}
-                      fetchMessages={fetchMessages}
-                      publishMessage={publishMessage}
-                    />
-                  } />
-                </Routes>
+                {/* In two-column mode the room list lives in a persistent sidebar, and the
+                    routed screen is shown in the main pane next to it. Both panes read from
+                    the same chat state fed by our single personal-channel subscription, so
+                    they update live together. */}
+                {twoColumn ? (
+                  <div id="chat-columns">
+                    <div id="chat-sidebar">
+                      <ChatRoomList />
+                    </div>
+                    <div id="chat-main">
+                      {screens}
+                    </div>
+                  </div>
+                ) : (
+                  screens
+                )}
               </ChatLayout>
             </Router>
           </ChatContext.Provider>

@@ -19,11 +19,8 @@ class LastMessageSerializer(serializers.ModelSerializer):
 
 
 class RoomSerializer(serializers.ModelSerializer):
-    member_count = serializers.SerializerMethodField()
+    member_count = serializers.IntegerField(read_only=True)
     last_message = LastMessageSerializer(read_only=True)
-
-    def get_member_count(self, obj):
-        return obj.member_count
 
     class Meta:
         model = Room

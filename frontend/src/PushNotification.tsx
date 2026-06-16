@@ -1,9 +1,11 @@
 import { getMessaging, getToken, onMessage, deleteToken } from 'firebase/messaging';
+import type { Messaging, MessagePayload } from 'firebase/messaging';
 import { initializeApp } from 'firebase/app';
+import type { FirebaseOptions } from 'firebase/app';
 
-let messaging;
+let messaging: Messaging | undefined;
 
-export const initializeFirebase = (firebaseConfig: any) => {
+export const initializeFirebase = (firebaseConfig: FirebaseOptions) => {
     if (!messaging) {
         if (navigator.serviceWorker === undefined) {
             console.error('Service Worker is not available in this browser.');
@@ -14,7 +16,7 @@ export const initializeFirebase = (firebaseConfig: any) => {
     }
 };
 
-export const requestNotificationToken = async (firebaseConfig: any, vapidKey: string): Promise<string | null> => {
+export const requestNotificationToken = async (vapidKey: string): Promise<string | null> => {
     try {
         // Request notification permission.
         const permission = await Notification.requestPermission();
@@ -24,20 +26,19 @@ export const requestNotificationToken = async (firebaseConfig: any, vapidKey: st
         }
 
         // Register Service Worker for background notifications.
-        if ('serviceWorker' in navigator) {
-            if (navigator.serviceWorker === undefined) {
-                console.error('Service Worker is not available in this browser.');
-                return null;
-            }
-            try {
-                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-                console.log('Service Worker registered with scope:', registration.scope);
-            } catch (err) {
-                console.error('Service Worker registration failed:', err);
-                return null;
-            }
-        } else {
+        if (!('serviceWorker' in navigator) || navigator.serviceWorker === undefined) {
             console.warn('Service Worker is not supported in this browser.');
+            return null;
+        }
+        try {
+            const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+            console.log('Service Worker registered with scope:', registration.scope);
+        } catch (err) {
+            console.error('Service Worker registration failed:', err);
+            return null;
+        }
+
+        if (!messaging) {
             return null;
         }
 
@@ -54,7 +55,7 @@ export const requestNotificationToken = async (firebaseConfig: any, vapidKey: st
     }
 };
 
-export const onForegroundNotification = (callback) => {
+export const onForegroundNotification = (callback: (payload: MessagePayload) => void) => {
     if (messaging) {
         onMessage(messaging, callback);
     }

@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import Exists, OuterRef, Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import status
 from rest_framework.generics import ListCreateAPIView
 from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
 from rest_framework.permissions import IsAuthenticated
@@ -17,6 +17,8 @@ from rest_framework.viewsets import GenericViewSet
 
 from .models import Message, Room, RoomMember, Outbox, CDC
 from .serializers import MessageSerializer, RoomSearchSerializer, RoomSerializer, RoomMemberSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class RoomListViewSet(ListModelMixin, GenericViewSet):
@@ -41,15 +43,14 @@ class RoomDetailViewSet(RetrieveModelMixin, GenericViewSet):
         ).filter(memberships__user_id=self.request.user.pk)
 
 
-class RoomSearchViewSet(viewsets.ModelViewSet):
+class RoomSearchViewSet(ListModelMixin, GenericViewSet):
     serializer_class = RoomSearchSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
         user_membership = RoomMember.objects.filter(
             room=OuterRef('pk'),
-            user=user
+            user=self.request.user
         )
         return Room.objects.annotate(
             is_member=Exists(user_membership)
@@ -85,7 +86,7 @@ class CentrifugoMixin:
                     }
                 )
             except requests.exceptions.RequestException as e:
-                logging.error(e)
+                logger.error(e)
 
         if settings.CENTRIFUGO_BROADCAST_MODE == 'api':
             # We need to use on_commit here to not send notification to Centrifugo before
@@ -175,11 +176,13 @@ class MessageListCreateAPIView(ListCreateAPIView, CentrifugoMixin):
         room_id = self.kwargs['room_id']
         get_object_or_404(RoomMember, user=self.request.user, room_id=room_id)
         return Message.objects.filter(
-            room_id=room_id).prefetch_related('user', 'room').order_by('-created_at')
+            room_id=room_id).select_related('user', 'room').order_by('-created_at')
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         room_id = self.kwargs['room_id']
+        # Only members of the room may post messages to it.
+        get_object_or_404(RoomMember, user=request.user, room_id=room_id)
         room = Room.objects.select_for_update().get(id=room_id)
         room.increment_version()
         channels = self.get_room_member_channels(room_id)
@@ -209,9 +212,9 @@ class JoinRoomView(APIView, CentrifugoMixin):
     @transaction.atomic
     def post(self, request, room_id):
         room = Room.objects.select_for_update().get(id=room_id)
-        room.increment_version()
         if RoomMember.objects.filter(user=request.user, room=room).exists():
             return Response({"message": "already a member"}, status=status.HTTP_409_CONFLICT)
+        room.increment_version()
         obj, _ = RoomMember.objects.get_or_create(user=request.user, room=room)
         channels = self.get_room_member_channels(room_id)
         obj.room.member_count = len(channels)
@@ -236,9 +239,11 @@ class LeaveRoomView(APIView, CentrifugoMixin):
     @transaction.atomic
     def post(self, request, room_id):
         room = Room.objects.select_for_update().get(id=room_id)
-        room.increment_version()
-        channels = self.get_room_member_channels(room_id)
         obj = get_object_or_404(RoomMember, user=request.user, room=room)
+        room.increment_version()
+        # Channels are computed while the leaving user is still a member, so the event also
+        # reaches their own personal channel (to sync their other devices).
+        channels = self.get_room_member_channels(room_id)
         obj.room.member_count = len(channels) - 1
         pk = obj.pk
         obj.delete()

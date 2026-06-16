@@ -1,5 +1,10 @@
 import axios, { AxiosHeaders } from "axios";
 import { API_ENDPOINT_BASE } from "./AppSettings";
+import type { AuthInfo, DeviceInfo, Message, Room, RoomMembership, RoomSearchResult } from "./types";
+
+// All requests are authenticated with Django's session cookie, which the
+// browser sends automatically. State-changing (POST) requests additionally
+// need the CSRF token in the X-CSRFToken header.
 
 export const getCSRFToken = async (): Promise<string> => {
   const res = await axios.get(`${API_ENDPOINT_BASE}/api/csrf/`, {});
@@ -10,7 +15,7 @@ export const getCSRFToken = async (): Promise<string> => {
   throw new Error('no X-CSRFToken in headers')
 };
 
-export const login = async (csrfToken: string, username: string, password: string) => {
+export const login = async (csrfToken: string, username: string, password: string): Promise<AuthInfo> => {
   const response = await axios.post(`${API_ENDPOINT_BASE}/api/login/`, { username, password }, {
     headers: {
       "X-CSRFToken": csrfToken
@@ -19,7 +24,7 @@ export const login = async (csrfToken: string, username: string, password: strin
   return response.data
 }
 
-export const logout = async (csrfToken: string, deviceId: string) => {
+export const logout = async (csrfToken: string, deviceId: string): Promise<void> => {
   await axios.post(`${API_ENDPOINT_BASE}/api/logout/`, {
     'device_id': deviceId
   }, {
@@ -29,47 +34,39 @@ export const logout = async (csrfToken: string, deviceId: string) => {
   });
 }
 
-export const getConnectionToken = async () => {
+export const getConnectionToken = async (): Promise<string> => {
   const response = await axios.get(`${API_ENDPOINT_BASE}/api/token/connection/`, {})
   return response.data.token;
 }
 
-export const getSubscriptionToken = async (channel: string) => {
+export const getSubscriptionToken = async (channel: string): Promise<string> => {
   const response = await axios.get(`${API_ENDPOINT_BASE}/api/token/subscription/`, {
     params: { channel: channel }
   });
   return response.data.token;
 }
 
-export const getRooms = async () => {
-  const response = await axios.get(`${API_ENDPOINT_BASE}/api/rooms/`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-  });
+export const getRooms = async (): Promise<Room[]> => {
+  const response = await axios.get(`${API_ENDPOINT_BASE}/api/rooms/`);
   return response.data.results
 };
 
-export const searchRooms = async () => {
-  const response = await axios.get(`${API_ENDPOINT_BASE}/api/search/`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-  });
+export const searchRooms = async (): Promise<RoomSearchResult[]> => {
+  const response = await axios.get(`${API_ENDPOINT_BASE}/api/search/`);
   return response.data.results
 };
 
-export const getRoom = async (roomId: string) => {
-  const response = await axios.get(`${API_ENDPOINT_BASE}/api/rooms/${roomId}/`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-  });
+export const getRoom = async (roomId: string): Promise<Room> => {
+  const response = await axios.get(`${API_ENDPOINT_BASE}/api/rooms/${roomId}/`);
   return response.data
 };
 
-export const getMessages = async (roomId: string) => {
-  const response = await axios.get(`${API_ENDPOINT_BASE}/api/rooms/${roomId}/messages/`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-  })
+export const getMessages = async (roomId: string): Promise<Message[]> => {
+  const response = await axios.get(`${API_ENDPOINT_BASE}/api/rooms/${roomId}/messages/`)
   return response.data.results
 }
 
-export const addMessage = async (csrfToken: string, roomId: string, content: string) => {
+export const addMessage = async (csrfToken: string, roomId: string, content: string): Promise<Message> => {
   const response = await axios.post(`${API_ENDPOINT_BASE}/api/rooms/${roomId}/messages/`, {
     'content': content
   }, {
@@ -80,7 +77,7 @@ export const addMessage = async (csrfToken: string, roomId: string, content: str
   return response.data
 }
 
-export const joinRoom = async (csrfToken: string, roomId: string) => {
+export const joinRoom = async (csrfToken: string, roomId: string): Promise<RoomMembership> => {
   const response = await axios.post(`${API_ENDPOINT_BASE}/api/rooms/${roomId}/join/`, {}, {
     headers: {
       'X-CSRFToken': csrfToken
@@ -89,7 +86,7 @@ export const joinRoom = async (csrfToken: string, roomId: string) => {
   return response.data
 }
 
-export const leaveRoom = async (csrfToken: string, roomId: string) => {
+export const leaveRoom = async (csrfToken: string, roomId: string): Promise<RoomMembership> => {
   const response = await axios.post(`${API_ENDPOINT_BASE}/api/rooms/${roomId}/leave/`, {}, {
     headers: {
       'X-CSRFToken': csrfToken
@@ -98,7 +95,7 @@ export const leaveRoom = async (csrfToken: string, roomId: string) => {
   return response.data
 }
 
-export const registerDevice = async (csrfToken: string, deviceInfo: any) => {
+export const registerDevice = async (csrfToken: string, deviceInfo: DeviceInfo): Promise<{ device_id: string }> => {
   const response = await axios.post(`${API_ENDPOINT_BASE}/api/device/register/`, {
     'device': deviceInfo
   }, {
