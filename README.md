@@ -91,8 +91,13 @@ tutorial.
 | --- | --- |
 | http://localhost:9000 | The app |
 | http://localhost:9000/admin | Django admin |
-| http://localhost:3000 | Grafana (admin / admin) |
+| http://localhost:3000 | Grafana (admin / admin) — the official Centrifugo dashboard is provisioned automatically |
 | http://localhost:9090 | Prometheus |
+
+The Grafana dashboard is loaded from `grafana/dashboards/centrifugo.json` (the same
+JSON published as [dashboard 13039](https://grafana.com/grafana/dashboards/13039)) via
+`grafana/provisioning/dashboards/dashboards.yml`, so it is there right after
+`docker compose up` — no manual import needed.
 
 ## Push notifications
 
